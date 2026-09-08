@@ -1,0 +1,60 @@
+{
+  "location": {
+    "name": "Visakhapatnam Coast",
+    "lat": 17.72,
+    "lon": 83.30,
+    "region": "Andhra Pradesh"
+  },
+  "timestamp": "2026-09-08T06:00:00+05:30",
+  "data_timestamp": "2026-09-08T05:30:00+05:30",
+  "ocean": {
+    "sst": 29.8,
+    "sst_unit": "°C",
+    "chlorophyll": 0.22,
+    "chlorophyll_unit": "mg/m³",
+    "wave_height": 4.5,
+    "wave_height_unit": "m",
+    "wave_period": 12.0,
+    "wave_period_unit": "s"
+  },
+  "weather": {
+    "wind_speed": 65.0,
+    "wind_speed_unit": "km/h",
+    "wind_direction": "NE",
+    "visibility": 3.0,
+    "visibility_unit": "km",
+    "temperature": 27.5,
+    "temperature_unit": "°C",
+    "humidity": 92,
+    "humidity_unit": "%",
+    "condition": "Heavy Rain"
+  },
+  "tide": {
+    "current": "high",
+    "next_change": "09:30",
+    "next_type": "low",
+    "tidal_range_m": 1.4
+  },
+  "alerts": [
+    {
+      "type": "cyclone",
+      "severity": "warning",
+      "title": "Cyclone DANA — Yellow Warning",
+      "message": "Cyclonic storm DANA over Bay of Bengal, expected to intensify. Fishermen advised not to venture into sea along Andhra Pradesh and Odisha coasts till 10 Sep.",
+      "issued_at": "2026-09-08T03:00:00+05:30",
+      "valid_until": "2026-09-10T23:59:00+05:30",
+      "source": "IMD"
+    },
+    {
+      "type": "high_wave",
+      "severity": "warning",
+      "title": "High Wave Alert",
+      "message": "Waves of 3.5–5.0 m expected along north Andhra Pradesh coast. Avoid coastal and offshore activities.",
+      "issued_at": "2026-09-08T04:00:00+05:30",
+      "valid_until": "2026-09-09T18:00:00+05:30",
+      "source": "INCOIS"
+    }
+  ],
+  "pfz_zones": []
+}
+
