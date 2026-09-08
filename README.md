@@ -86,7 +86,7 @@ orca-sih/
 └── README.md
 ```
 
-## Team — BuildWithUs
+## Team
 
 - Pavithran
 - BalaYoghi V
