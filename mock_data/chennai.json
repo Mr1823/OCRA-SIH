@@ -1,0 +1,64 @@
+{
+  "location": {
+    "name": "Chennai Coast",
+    "lat": 13.08,
+    "lon": 80.27,
+    "region": "Tamil Nadu"
+  },
+  "timestamp": "2026-09-08T06:00:00+05:30",
+  "data_timestamp": "2026-09-08T05:30:00+05:30",
+  "ocean": {
+    "sst": 28.5,
+    "sst_unit": "°C",
+    "chlorophyll": 0.45,
+    "chlorophyll_unit": "mg/m³",
+    "wave_height": 1.2,
+    "wave_height_unit": "m",
+    "wave_period": 8.0,
+    "wave_period_unit": "s"
+  },
+  "weather": {
+    "wind_speed": 18.0,
+    "wind_speed_unit": "km/h",
+    "wind_direction": "SW",
+    "visibility": 12.0,
+    "visibility_unit": "km",
+    "temperature": 31.2,
+    "temperature_unit": "°C",
+    "humidity": 78,
+    "humidity_unit": "%",
+    "condition": "Partly Cloudy"
+  },
+  "tide": {
+    "current": "low",
+    "next_change": "12:45",
+    "next_type": "high",
+    "tidal_range_m": 0.9
+  },
+  "alerts": [],
+  "pfz_zones": [
+    {
+      "id": "PFZ-CHN-001",
+      "lat": 13.15,
+      "lon": 80.55,
+      "distance_km": 32.0,
+      "confidence": "high",
+      "sst": 27.8,
+      "chlorophyll": 0.62,
+      "species_likely": ["Sardine", "Mackerel"],
+      "valid_until": "2026-09-08T18:00:00+05:30"
+    },
+    {
+      "id": "PFZ-CHN-002",
+      "lat": 12.90,
+      "lon": 80.65,
+      "distance_km": 45.0,
+      "confidence": "medium",
+      "sst": 28.1,
+      "chlorophyll": 0.38,
+      "species_likely": ["Tuna"],
+      "valid_until": "2026-09-08T18:00:00+05:30"
+    }
+  ]
+}
+

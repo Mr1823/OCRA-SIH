@@ -1,0 +1,63 @@
+{
+  "location": {
+    "name": "Mumbai Coast",
+    "lat": 19.08,
+    "lon": 72.88,
+    "region": "Maharashtra"
+  },
+  "timestamp": "2026-09-08T06:00:00+05:30",
+  "data_timestamp": "2026-09-08T05:30:00+05:30",
+  "ocean": {
+    "sst": 29.2,
+    "sst_unit": "°C",
+    "chlorophyll": 0.35,
+    "chlorophyll_unit": "mg/m³",
+    "wave_height": 2.8,
+    "wave_height_unit": "m",
+    "wave_period": 9.5,
+    "wave_period_unit": "s"
+  },
+  "weather": {
+    "wind_speed": 40.0,
+    "wind_speed_unit": "km/h",
+    "wind_direction": "W",
+    "visibility": 6.0,
+    "visibility_unit": "km",
+    "temperature": 29.8,
+    "temperature_unit": "°C",
+    "humidity": 85,
+    "humidity_unit": "%",
+    "condition": "Thunderstorms"
+  },
+  "tide": {
+    "current": "high",
+    "next_change": "15:20",
+    "next_type": "low",
+    "tidal_range_m": 3.8
+  },
+  "alerts": [
+    {
+      "type": "lightning",
+      "severity": "watch",
+      "title": "Lightning Activity Warning",
+      "message": "Frequent lightning activity expected over Mumbai coast and adjoining Arabian Sea during next 12 hours. Exercise caution in open waters.",
+      "issued_at": "2026-09-08T05:00:00+05:30",
+      "valid_until": "2026-09-08T17:00:00+05:30",
+      "source": "IMD"
+    }
+  ],
+  "pfz_zones": [
+    {
+      "id": "PFZ-MUM-001",
+      "lat": 18.75,
+      "lon": 72.20,
+      "distance_km": 78.0,
+      "confidence": "medium",
+      "sst": 28.8,
+      "chlorophyll": 0.41,
+      "species_likely": ["Pomfret", "Prawns"],
+      "valid_until": "2026-09-08T18:00:00+05:30"
+    }
+  ]
+}
+
