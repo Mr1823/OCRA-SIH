@@ -11,6 +11,8 @@ mode set it explicitly with monkeypatch.
 
 import os
 
+import pytest
+
 for _name in (
     "GROQ_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -23,3 +25,13 @@ for _name in (
 
 os.environ["USE_LIVE_DATA"] = "false"
 os.environ["ENABLE_LIVE_PFZ_GRID"] = "false"
+
+
+@pytest.fixture(autouse=True)
+def _reset_llm_provider_cooldowns():
+    """A provider put in cooldown by one test must not silently skip calls in the next."""
+    from utils.llm import reset_provider_status
+
+    reset_provider_status()
+    yield
+    reset_provider_status()

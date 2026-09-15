@@ -83,11 +83,21 @@ ENABLE_LIVE_PFZ_GRID: bool = os.getenv("ENABLE_LIVE_PFZ_GRID", "false").lower() 
 )
 
 # ──────────────────────────────────────────────
-#  Rate-limit / retry settings (shared by every LLM provider)
+#  LLM call policy (shared by every provider — see utils/llm.py)
 # ──────────────────────────────────────────────
 
-LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "3"))
-LLM_RETRY_BASE_DELAY: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "2.0"))  # seconds
+# Retries per call for rate limits (429) and server errors (5xx).
+LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "1"))
+LLM_RETRY_BASE_DELAY: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))  # seconds
+# Most a single call may spend waiting between retries before the chain
+# moves on to the next provider. Bounds the worst case whatever the two
+# settings above are — the PRD targets 8–10 s for a whole response.
+LLM_RETRY_WAIT_BUDGET_S: float = float(os.getenv("LLM_RETRY_WAIT_BUDGET_S", "3.0"))
+# Per-request timeout. The SDK defaults are 60 s (Groq) and 600 s (Anthropic).
+LLM_REQUEST_TIMEOUT_S: float = float(os.getenv("LLM_REQUEST_TIMEOUT_S", "8.0"))
+# How long to skip a provider after an error retrying can't fix
+# (invalid key, no credit balance).
+LLM_PROVIDER_COOLDOWN_S: float = float(os.getenv("LLM_PROVIDER_COOLDOWN_S", "600"))
 
 # ──────────────────────────────────────────────
 #  Server settings

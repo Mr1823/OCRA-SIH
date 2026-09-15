@@ -31,6 +31,7 @@ if str(_BACKEND_DIR) not in sys.path:
 
 import config  # noqa: E402  (after path fix)
 from agents.orchestrator import handle_query  # noqa: E402
+from utils.llm import is_account_error, mark_provider_unavailable  # noqa: E402
 
 # ──────────────────────────────────────────────
 #  Logging
@@ -120,8 +121,10 @@ async def _check_groq_reachable() -> bool:
         return False
 
     try:
-        client = groq.Groq(api_key=config.GROQ_API_KEY, max_retries=0)
-        client.chat.completions.create(
+        client = groq.AsyncGroq(
+            api_key=config.GROQ_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S
+        )
+        await client.chat.completions.create(
             model=config.GROQ_MODEL,
             max_tokens=1,
             messages=[{"role": "user", "content": "ping"}],
@@ -129,6 +132,9 @@ async def _check_groq_reachable() -> bool:
         return True
     except Exception as e:
         logger.error(f"   Groq ping    : ❌ FAILED — {e}")
+        if is_account_error(getattr(e, "status_code", None), str(e)):
+            # Don't make every request rediscover a key that can't work.
+            mark_provider_unavailable("groq", f"startup ping failed: {e}")
         return False
 
 
@@ -146,8 +152,10 @@ async def _check_claude_reachable() -> bool:
         return False
 
     try:
-        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, max_retries=0)
-        client.messages.create(
+        client = anthropic.AsyncAnthropic(
+            api_key=config.ANTHROPIC_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S
+        )
+        await client.messages.create(
             model=config.ANTHROPIC_MODEL,
             max_tokens=1,
             messages=[{"role": "user", "content": "ping"}],
@@ -155,6 +163,10 @@ async def _check_claude_reachable() -> bool:
         return True
     except Exception as e:
         logger.error(f"   Claude ping  : ❌ FAILED — {e}")
+        if is_account_error(getattr(e, "status_code", None), str(e)):
+            # e.g. "credit balance is too low": skip Claude instead of paying
+            # a doomed round trip on every request.
+            mark_provider_unavailable("anthropic", f"startup ping failed: {e}")
         return False
 
 

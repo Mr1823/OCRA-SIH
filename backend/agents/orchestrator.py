@@ -12,8 +12,9 @@ Provider chain: Groq (fast, generous free tier) → Claude (Anthropic) →
 keyword-based fallback, so the demo is always functional even if every
 LLM provider is unavailable or unconfigured.
 
-Includes exponential-backoff retry on 429 (rate limit) and 5xx (server
-error) responses for each provider.
+Calls are async, and retries on 429 (rate limit) and 5xx (server error)
+follow utils/llm.py: bounded by a total wait budget, honouring
+retry-after, with a cooldown for providers that can't answer at all.
 """
 
 from __future__ import annotations
@@ -31,6 +32,13 @@ from agents.risk_assessment import assess_safety
 from agents.pfz import find_nearby_pfz
 from agents.synthesis import synthesise_response
 from utils.geocoding import geocode
+from utils.llm import (
+    is_account_error,
+    mark_provider_unavailable,
+    provider_available,
+    retry_after_seconds,
+    retry_delay,
+)
 
 logger = logging.getLogger("orca.orchestrator")
 
@@ -143,6 +151,33 @@ _SYSTEM_PROMPT_TA = (
 )
 
 
+async def _after_status_error(label: str, provider: str, error, attempt: int, waited: float) -> Optional[float]:
+    """
+    Handle an HTTP error from an intent-detection call. Retries rate limits
+    (429) and server errors (5xx) within utils.llm's budget — sleeping here
+    and returning the seconds waited — or returns None when the caller
+    should stop and let the next provider answer.
+    """
+    status = error.status_code
+    if status == 429 or status >= 500:
+        delay = retry_delay(attempt, error, waited)
+        if delay is not None:
+            logger.warning(f"{label} API error {status} (attempt {attempt + 1}): {error}. Retrying in {delay:.1f}s...")
+            await asyncio.sleep(delay)
+            return delay
+        retry_after = retry_after_seconds(error)
+        if status == 429 and retry_after:
+            # Don't call it again until it says it's ready.
+            mark_provider_unavailable(provider, f"rate limited (retry-after {retry_after:.0f}s)", retry_after)
+        return None
+
+    if is_account_error(status, str(error)):
+        mark_provider_unavailable(provider, f"account error {status}: {error}")
+    else:
+        logger.error(f"{label} API error {status} (non-retryable): {error}")
+    return None
+
+
 # ──────────────────────────────────────────────
 #  Groq API call with retry (primary provider)
 # ──────────────────────────────────────────────
@@ -161,6 +196,9 @@ async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[di
     if not config.GROQ_API_KEY or config.GROQ_API_KEY == "your_groq_api_key_here":
         logger.warning("No Groq API key configured — trying next provider")
         return None
+    if not provider_available("groq"):
+        logger.info("Groq is cooling down after an error retrying can't fix — trying next provider")
+        return None
 
     try:
         import groq
@@ -168,7 +206,9 @@ async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[di
         logger.warning("groq package not installed — trying next provider")
         return None
 
-    client = groq.Groq(api_key=config.GROQ_API_KEY, max_retries=0)
+    # Async client so a slow call never blocks other requests. Retries are
+    # driven by the loop below, so the SDK's own are off.
+    client = groq.AsyncGroq(api_key=config.GROQ_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S)
 
     # _TOOL_DEFINITIONS uses Claude's "input_schema" key (renamed from the
     # original Gemini-era "parameters" during an earlier migration) —
@@ -187,9 +227,12 @@ async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[di
     ]
 
     last_error = None
+    attempts = 0
+    waited = 0.0
     for attempt in range(config.LLM_MAX_RETRIES + 1):
+        attempts = attempt + 1
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=config.GROQ_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -210,38 +253,19 @@ async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[di
                 logger.info(f"Groq returned text (no tool call): {message.content[:100]}")
             return None
 
-        except groq.RateLimitError as e:
+        except groq.APIStatusError as e:  # includes RateLimitError (429)
             last_error = e
-            delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
-            logger.warning(
-                f"Groq API rate limited (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
-                f"{e}. Retrying in {delay:.1f}s..."
-            )
-            await asyncio.sleep(delay)
-            continue
-
-        except groq.APIStatusError as e:
-            last_error = e
-
-            # Retry on transient server errors (5xx); anything else (4xx) is non-retryable.
-            if e.status_code >= 500:
-                delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning(
-                    f"Groq API server error (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
-                    f"{e}. Retrying in {delay:.1f}s..."
-                )
-                await asyncio.sleep(delay)
-                continue
-            else:
-                logger.error(f"Groq API error (non-retryable): {e}")
+            delay = await _after_status_error("Groq", "groq", e, attempt, waited)
+            if delay is None:
                 break
+            waited += delay
 
         except Exception as e:
             last_error = e
-            logger.error(f"Groq API error (unexpected): {e}")
+            logger.error(f"Groq API error (not retried): {type(e).__name__}: {e}")
             break
 
-    logger.error(f"Groq API failed after {config.LLM_MAX_RETRIES + 1} attempts: {last_error}")
+    logger.error(f"Groq API gave up after {attempts} attempt(s) and {waited:.1f}s of backoff: {last_error}")
     return None
 
 
@@ -263,6 +287,9 @@ async def _call_claude_with_retry(query: str, language: str = "en") -> Optional[
     if not config.ANTHROPIC_API_KEY or config.ANTHROPIC_API_KEY == "your_key_here":
         logger.warning("No Anthropic API key configured — falling back to keyword detection")
         return None
+    if not provider_available("anthropic"):
+        logger.info("Claude is cooling down after an error retrying can't fix — falling back to keyword detection")
+        return None
 
     try:
         import anthropic
@@ -270,10 +297,12 @@ async def _call_claude_with_retry(query: str, language: str = "en") -> Optional[
         logger.warning("anthropic package not installed — falling back to keyword detection")
         return None
 
-    # We drive our own exponential-backoff loop below, so disable the
-    # SDK's built-in retries — otherwise the two layers compound into far
-    # more attempts than LLM_MAX_RETRIES implies.
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, max_retries=0)
+    # Async client so a slow call never blocks other requests. Retries are
+    # driven by the loop below, so the SDK's own are off — otherwise the
+    # two layers compound.
+    client = anthropic.AsyncAnthropic(
+        api_key=config.ANTHROPIC_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S
+    )
 
     tools = [
         {
@@ -285,9 +314,12 @@ async def _call_claude_with_retry(query: str, language: str = "en") -> Optional[
     ]
 
     last_error = None
+    attempts = 0
+    waited = 0.0
     for attempt in range(config.LLM_MAX_RETRIES + 1):
+        attempts = attempt + 1
         try:
-            response = client.messages.create(
+            response = await client.messages.create(
                 model=config.ANTHROPIC_MODEL,
                 max_tokens=1024,
                 system=system_prompt,
@@ -310,38 +342,19 @@ async def _call_claude_with_retry(query: str, language: str = "en") -> Optional[
                 logger.info(f"Claude returned text (no tool call): {text_block.text[:100]}")
             return None
 
-        except anthropic.RateLimitError as e:
+        except anthropic.APIStatusError as e:  # includes RateLimitError (429)
             last_error = e
-            delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
-            logger.warning(
-                f"Claude API rate limited (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
-                f"{e}. Retrying in {delay:.1f}s..."
-            )
-            await asyncio.sleep(delay)
-            continue
-
-        except anthropic.APIStatusError as e:
-            last_error = e
-
-            # Retry on transient server errors (5xx); anything else (4xx) is non-retryable.
-            if e.status_code >= 500:
-                delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
-                logger.warning(
-                    f"Claude API server error (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
-                    f"{e}. Retrying in {delay:.1f}s..."
-                )
-                await asyncio.sleep(delay)
-                continue
-            else:
-                logger.error(f"Claude API error (non-retryable): {e}")
+            delay = await _after_status_error("Claude", "anthropic", e, attempt, waited)
+            if delay is None:
                 break
+            waited += delay
 
         except Exception as e:
             last_error = e
-            logger.error(f"Claude API error (unexpected): {e}")
+            logger.error(f"Claude API error (not retried): {type(e).__name__}: {e}")
             break
 
-    logger.error(f"Claude API failed after {config.LLM_MAX_RETRIES + 1} attempts: {last_error}")
+    logger.error(f"Claude API gave up after {attempts} attempt(s) and {waited:.1f}s of backoff: {last_error}")
     return None
 
 

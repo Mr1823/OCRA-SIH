@@ -31,6 +31,7 @@ from typing import Any
 import config
 from data_sources.interface import is_unavailable
 from utils.dates import MAX_FORECAST_DAYS, describe_date, is_forecastable, resolve_requested_date, today_ist
+from utils.llm import is_account_error, mark_provider_unavailable, provider_available
 
 logger = logging.getLogger("orca.synthesis")
 
@@ -769,25 +770,36 @@ async def _generate_groq_answer(
     """
     if not config.GROQ_API_KEY or config.GROQ_API_KEY == "your_groq_api_key_here":
         return None
+    if not provider_available("groq"):
+        return None
 
     try:
         import groq
     except ImportError:
         return None
 
-    client = groq.Groq(api_key=config.GROQ_API_KEY)
+    # One async attempt with a short timeout and no SDK retries: a template
+    # answer is always ready, so waiting on a struggling provider only makes
+    # the user wait. (The SDK default — 2 retries honouring retry-after, 60 s
+    # timeout — is what stretched a rate limit into a minute-long stall.)
+    client = groq.AsyncGroq(api_key=config.GROQ_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S)
     prompt = _build_prompt(user_query, data_summary, language)
 
     try:
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=config.GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
         )
         text = response.choices[0].message.content
         if text:
             return text.strip()
+    except groq.APIStatusError as e:
+        if is_account_error(e.status_code, str(e)):
+            mark_provider_unavailable("groq", f"account error {e.status_code}: {e}")
+        else:
+            logger.warning(f"Groq answer generation failed: {e}")
     except Exception as e:
-        logger.warning(f"Groq answer generation failed: {e}")
+        logger.warning(f"Groq answer generation failed: {type(e).__name__}: {e}")
 
     return None
 
@@ -801,17 +813,22 @@ async def _generate_llm_answer(
     """
     if not config.ANTHROPIC_API_KEY or config.ANTHROPIC_API_KEY == "your_key_here":
         return None
+    if not provider_available("anthropic"):
+        return None
 
     try:
         import anthropic
     except ImportError:
         return None
 
-    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    # Same policy as _generate_groq_answer: one async attempt, short timeout.
+    client = anthropic.AsyncAnthropic(
+        api_key=config.ANTHROPIC_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S
+    )
     prompt = _build_prompt(user_query, data_summary, language)
 
     try:
-        response = client.messages.create(
+        response = await client.messages.create(
             model=config.ANTHROPIC_MODEL,
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
@@ -819,8 +836,13 @@ async def _generate_llm_answer(
         text = response.content[0].text
         if text:
             return text.strip()
+    except anthropic.APIStatusError as e:
+        if is_account_error(e.status_code, str(e)):
+            mark_provider_unavailable("anthropic", f"account error {e.status_code}: {e}")
+        else:
+            logger.warning(f"LLM answer generation failed: {e}")
     except Exception as e:
-        logger.warning(f"LLM answer generation failed: {e}")
+        logger.warning(f"LLM answer generation failed: {type(e).__name__}: {e}")
 
     return None
 

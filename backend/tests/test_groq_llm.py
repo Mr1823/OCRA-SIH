@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import groq
 import httpx
@@ -58,7 +58,7 @@ def _configure_credentials(monkeypatch):
 def _mock_client(create_mock: MagicMock):
     client_instance = MagicMock()
     client_instance.chat.completions.create = create_mock
-    return patch("groq.Groq", return_value=client_instance)
+    return patch("groq.AsyncGroq", return_value=client_instance)
 
 
 # ══════════════════════════════════════════════
@@ -68,7 +68,7 @@ def _mock_client(create_mock: MagicMock):
 
 @pytest.mark.asyncio
 async def test_groq_returns_tool_call_as_name_and_args():
-    create_mock = MagicMock(
+    create_mock = AsyncMock(
         return_value=_fake_completion(
             tool_calls=[_tool_call("assess_sea_safety", '{"location": "Chennai", "date": "today"}')]
         )
@@ -85,7 +85,7 @@ async def test_groq_returns_tool_call_as_name_and_args():
 
 @pytest.mark.asyncio
 async def test_groq_text_only_response_returns_none():
-    create_mock = MagicMock(return_value=_fake_completion(content="Could you clarify the location?"))
+    create_mock = AsyncMock(return_value=_fake_completion(content="Could you clarify the location?"))
     with _mock_client(create_mock):
         result = await _call_groq_with_retry("What's the weather like?")
 
@@ -99,7 +99,7 @@ async def test_groq_text_only_response_returns_none():
 
 @pytest.mark.asyncio
 async def test_groq_rate_limit_retries_then_succeeds():
-    create_mock = MagicMock(
+    create_mock = AsyncMock(
         side_effect=[
             _rate_limit_error(),
             _fake_completion(tool_calls=[_tool_call("check_alerts", '{"location": "Vizag"}')]),
@@ -114,7 +114,7 @@ async def test_groq_rate_limit_retries_then_succeeds():
 
 @pytest.mark.asyncio
 async def test_groq_client_error_4xx_is_not_retried():
-    create_mock = MagicMock(side_effect=_api_status_error(400))
+    create_mock = AsyncMock(side_effect=_api_status_error(400))
     with _mock_client(create_mock):
         result = await _call_groq_with_retry("Is it safe near Chennai?")
 
@@ -130,7 +130,7 @@ async def test_groq_client_error_4xx_is_not_retried():
 @pytest.mark.asyncio
 async def test_groq_missing_api_key_returns_none_without_calling(monkeypatch):
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    create_mock = MagicMock()
+    create_mock = AsyncMock()
     with _mock_client(create_mock):
         result = await _call_groq_with_retry("Is it safe near Chennai?")
 
@@ -166,7 +166,7 @@ def _handler_result():
 
 @pytest.mark.asyncio
 async def test_generate_groq_answer_success():
-    create_mock = MagicMock(return_value=_fake_completion(content=" It's safe to head out today. "))
+    create_mock = AsyncMock(return_value=_fake_completion(content=" It's safe to head out today. "))
     with _mock_client(create_mock):
         answer = await _generate_groq_answer(
             _handler_result(), "Is it safe near Chennai?", _build_data_summary(_handler_result())
@@ -180,7 +180,7 @@ async def test_generate_groq_answer_success():
 
 @pytest.mark.asyncio
 async def test_generate_groq_answer_failure_returns_none():
-    create_mock = MagicMock(side_effect=_api_status_error(500))
+    create_mock = AsyncMock(side_effect=_api_status_error(500))
     with _mock_client(create_mock):
         answer = await _generate_groq_answer(
             _handler_result(), "Is it safe near Chennai?", _build_data_summary(_handler_result())
@@ -192,7 +192,7 @@ async def test_generate_groq_answer_failure_returns_none():
 @pytest.mark.asyncio
 async def test_generate_groq_answer_missing_key_returns_none(monkeypatch):
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    create_mock = MagicMock()
+    create_mock = AsyncMock()
     with _mock_client(create_mock):
         answer = await _generate_groq_answer(
             _handler_result(), "Is it safe near Chennai?", _build_data_summary(_handler_result())

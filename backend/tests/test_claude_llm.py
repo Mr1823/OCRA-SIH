@@ -4,8 +4,8 @@ synthesis.py — tool-use intent detection, plain-text answer synthesis,
 and the retry/fallback behaviour around anthropic.RateLimitError /
 anthropic.APIStatusError.
 
-Mocks `anthropic.Anthropic` (via its `messages.create`) the way the old
-suite would have mocked `google.generativeai`.
+Mocks `anthropic.AsyncAnthropic` (via its `messages.create`) the way the
+old suite would have mocked `google.generativeai`.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import anthropic
 import httpx
@@ -43,7 +43,7 @@ def _fake_message(content: list) -> SimpleNamespace:
     return SimpleNamespace(content=content)
 
 
-def _rate_limit_error(retry_after: str = "1") -> anthropic.RateLimitError:
+def _rate_limit_error(retry_after: str = "0") -> anthropic.RateLimitError:
     req = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
     resp = httpx.Response(
         429,
@@ -75,7 +75,7 @@ def _configure_credentials(monkeypatch):
 def _mock_client(create_mock: MagicMock):
     client_instance = MagicMock()
     client_instance.messages.create = create_mock
-    return patch("anthropic.Anthropic", return_value=client_instance)
+    return patch("anthropic.AsyncAnthropic", return_value=client_instance)
 
 
 # ══════════════════════════════════════════════
@@ -85,7 +85,7 @@ def _mock_client(create_mock: MagicMock):
 
 @pytest.mark.asyncio
 async def test_claude_returns_tool_use_as_name_and_args():
-    create_mock = MagicMock(
+    create_mock = AsyncMock(
         return_value=_fake_message([_tool_use_block("assess_sea_safety", {"location": "Chennai", "date": "today"})])
     )
     with _mock_client(create_mock):
@@ -102,7 +102,7 @@ async def test_claude_returns_tool_use_as_name_and_args():
 @pytest.mark.asyncio
 async def test_claude_text_only_response_returns_none():
     """Claude answered with plain text instead of calling a tool — let keyword fallback take over."""
-    create_mock = MagicMock(return_value=_fake_message([_text_block("Could you clarify the location?")]))
+    create_mock = AsyncMock(return_value=_fake_message([_text_block("Could you clarify the location?")]))
     with _mock_client(create_mock):
         result = await _call_claude_with_retry("What's the weather like?")
 
@@ -116,7 +116,7 @@ async def test_claude_text_only_response_returns_none():
 
 @pytest.mark.asyncio
 async def test_rate_limit_error_retries_then_succeeds():
-    create_mock = MagicMock(
+    create_mock = AsyncMock(
         side_effect=[
             _rate_limit_error(),
             _fake_message([_tool_use_block("check_alerts", {"location": "Vizag"})]),
@@ -131,7 +131,7 @@ async def test_rate_limit_error_retries_then_succeeds():
 
 @pytest.mark.asyncio
 async def test_rate_limit_error_exhausts_retries_returns_none():
-    create_mock = MagicMock(side_effect=_rate_limit_error())
+    create_mock = AsyncMock(side_effect=_rate_limit_error())
     with _mock_client(create_mock):
         result = await _call_claude_with_retry("Any alerts near Vizag?")
 
@@ -141,7 +141,7 @@ async def test_rate_limit_error_exhausts_retries_returns_none():
 
 @pytest.mark.asyncio
 async def test_server_error_5xx_is_retried():
-    create_mock = MagicMock(
+    create_mock = AsyncMock(
         side_effect=[
             _api_status_error(503),
             _fake_message([_tool_use_block("find_nearest_pfz", {"location": "Mumbai"})]),
@@ -157,7 +157,7 @@ async def test_server_error_5xx_is_retried():
 @pytest.mark.asyncio
 async def test_client_error_4xx_is_not_retried():
     """A non-retryable 4xx (e.g. bad request) should fail fast, not burn through retries."""
-    create_mock = MagicMock(side_effect=_api_status_error(400))
+    create_mock = AsyncMock(side_effect=_api_status_error(400))
     with _mock_client(create_mock):
         result = await _call_claude_with_retry("Is it safe near Chennai?")
 
@@ -173,7 +173,7 @@ async def test_client_error_4xx_is_not_retried():
 @pytest.mark.asyncio
 async def test_missing_api_key_returns_none_without_calling_claude(monkeypatch):
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
-    create_mock = MagicMock()
+    create_mock = AsyncMock()
     with _mock_client(create_mock):
         result = await _call_claude_with_retry("Is it safe near Chennai?")
 
@@ -184,7 +184,7 @@ async def test_missing_api_key_returns_none_without_calling_claude(monkeypatch):
 @pytest.mark.asyncio
 async def test_placeholder_api_key_returns_none_without_calling_claude(monkeypatch):
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "your_key_here")
-    create_mock = MagicMock()
+    create_mock = AsyncMock()
     with _mock_client(create_mock):
         result = await _call_claude_with_retry("Is it safe near Chennai?")
 
@@ -220,7 +220,7 @@ def _handler_result():
 
 @pytest.mark.asyncio
 async def test_generate_llm_answer_success():
-    create_mock = MagicMock(return_value=_fake_message([_text_block(" It's safe to head out today. ")]))
+    create_mock = AsyncMock(return_value=_fake_message([_text_block(" It's safe to head out today. ")]))
     with _mock_client(create_mock):
         answer = await _generate_llm_answer(
             _handler_result(), "Is it safe near Chennai?", _build_data_summary(_handler_result())
@@ -234,7 +234,7 @@ async def test_generate_llm_answer_success():
 
 @pytest.mark.asyncio
 async def test_generate_llm_answer_failure_returns_none_for_template_fallback():
-    create_mock = MagicMock(side_effect=_api_status_error(500))
+    create_mock = AsyncMock(side_effect=_api_status_error(500))
     with _mock_client(create_mock):
         answer = await _generate_llm_answer(
             _handler_result(), "Is it safe near Chennai?", _build_data_summary(_handler_result())
@@ -246,7 +246,7 @@ async def test_generate_llm_answer_failure_returns_none_for_template_fallback():
 @pytest.mark.asyncio
 async def test_generate_llm_answer_missing_key_returns_none(monkeypatch):
     monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
-    create_mock = MagicMock()
+    create_mock = AsyncMock()
     with _mock_client(create_mock):
         answer = await _generate_llm_answer(
             _handler_result(), "Is it safe near Chennai?", _build_data_summary(_handler_result())
