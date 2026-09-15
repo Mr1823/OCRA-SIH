@@ -42,9 +42,8 @@ CYCLONE_ALERT = {
 
 @pytest.fixture(autouse=True)
 def _template_answers_only(monkeypatch):
-    """Deterministic template text — no Groq/Claude calls."""
+    """Deterministic template text — no Groq calls."""
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
 
 
 def _handler_result(intent: str, data_source: str, alerts: list) -> dict:

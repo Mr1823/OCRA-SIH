@@ -8,9 +8,8 @@ location/date, and pick from three tools:
   2. find_nearest_pfz    → ocean_weather + pfz + risk_assessment
   3. check_alerts        → ocean_weather (alerts subset)
 
-Provider chain: Groq (fast, generous free tier) → Claude (Anthropic) →
-keyword-based fallback, so the demo is always functional even if every
-LLM provider is unavailable or unconfigured.
+Provider chain: Groq → keyword-based fallback, so the demo is always
+functional even if Groq is unavailable or unconfigured.
 
 Calls are async, and retries on 429 (rate limit) and 5xx (server error)
 follow utils/llm.py: bounded by a total wait budget, honouring
@@ -43,7 +42,7 @@ from utils.llm import (
 logger = logging.getLogger("orca.orchestrator")
 
 # ──────────────────────────────────────────────
-#  Claude tool definitions
+#  Tool definitions
 # ──────────────────────────────────────────────
 
 _TOOL_DEFINITIONS = [
@@ -156,7 +155,7 @@ async def _after_status_error(label: str, provider: str, error, attempt: int, wa
     Handle an HTTP error from an intent-detection call. Retries rate limits
     (429) and server errors (5xx) within utils.llm's budget — sleeping here
     and returning the seconds waited — or returns None when the caller
-    should stop and let the next provider answer.
+    should stop and fall back to keyword detection.
     """
     status = error.status_code
     if status == 429 or status >= 500:
@@ -190,30 +189,29 @@ async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[di
 
     Returns None if the API key is missing, groq isn't installed, Groq
     responds without a tool call, or all retries fail — the caller then
-    tries the next provider in the chain.
+    falls back to keyword detection.
     """
     system_prompt = _SYSTEM_PROMPT_TA if language == "ta" else _SYSTEM_PROMPT
     if not config.GROQ_API_KEY or config.GROQ_API_KEY == "your_groq_api_key_here":
-        logger.warning("No Groq API key configured — trying next provider")
+        logger.warning("No Groq API key configured — falling back to keyword detection")
         return None
     if not provider_available("groq"):
-        logger.info("Groq is cooling down after an error retrying can't fix — trying next provider")
+        logger.info("Groq is paused after an earlier error (rate limit or account problem, logged above) — falling back to keyword detection")
         return None
 
     try:
         import groq
     except ImportError:
-        logger.warning("groq package not installed — trying next provider")
+        logger.warning("groq package not installed — falling back to keyword detection")
         return None
 
     # Async client so a slow call never blocks other requests. Retries are
     # driven by the loop below, so the SDK's own are off.
     client = groq.AsyncGroq(api_key=config.GROQ_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S)
 
-    # _TOOL_DEFINITIONS uses Claude's "input_schema" key (renamed from the
-    # original Gemini-era "parameters" during an earlier migration) —
+    # _TOOL_DEFINITIONS keeps each JSON schema under "input_schema" —
     # reformat into OpenAI/Groq's nested {"type": "function", "function": {...}}
-    # shape, with the schema back under the key Groq expects: "parameters".
+    # shape, with the schema under the key Groq expects: "parameters".
     tools = [
         {
             "type": "function",
@@ -266,95 +264,6 @@ async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[di
             break
 
     logger.error(f"Groq API gave up after {attempts} attempt(s) and {waited:.1f}s of backoff: {last_error}")
-    return None
-
-
-# ──────────────────────────────────────────────
-#  Claude API call with retry
-# ──────────────────────────────────────────────
-
-
-async def _call_claude_with_retry(query: str, language: str = "en") -> Optional[dict]:
-    """
-    Send the query to Claude with tool definitions and return the
-    tool-use result as {"name": ..., "args": {...}}.
-
-    Returns None if the API key is missing, Claude responds without a
-    tool call, or all retries fail.
-    """
-    system_prompt = _SYSTEM_PROMPT_TA if language == "ta" else _SYSTEM_PROMPT
-
-    if not config.ANTHROPIC_API_KEY or config.ANTHROPIC_API_KEY == "your_key_here":
-        logger.warning("No Anthropic API key configured — falling back to keyword detection")
-        return None
-    if not provider_available("anthropic"):
-        logger.info("Claude is cooling down after an error retrying can't fix — falling back to keyword detection")
-        return None
-
-    try:
-        import anthropic
-    except ImportError:
-        logger.warning("anthropic package not installed — falling back to keyword detection")
-        return None
-
-    # Async client so a slow call never blocks other requests. Retries are
-    # driven by the loop below, so the SDK's own are off — otherwise the
-    # two layers compound.
-    client = anthropic.AsyncAnthropic(
-        api_key=config.ANTHROPIC_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S
-    )
-
-    tools = [
-        {
-            "name": t["name"],
-            "description": t["description"],
-            "input_schema": t["input_schema"],
-        }
-        for t in _TOOL_DEFINITIONS
-    ]
-
-    last_error = None
-    attempts = 0
-    waited = 0.0
-    for attempt in range(config.LLM_MAX_RETRIES + 1):
-        attempts = attempt + 1
-        try:
-            response = await client.messages.create(
-                model=config.ANTHROPIC_MODEL,
-                max_tokens=1024,
-                system=system_prompt,
-                tools=tools,
-                messages=[{"role": "user", "content": query}],
-            )
-
-            # Extract tool use from response
-            tool_use_block = next(
-                (b for b in response.content if b.type == "tool_use"), None
-            )
-            if tool_use_block is not None:
-                args = dict(tool_use_block.input) if tool_use_block.input else {}
-                logger.info(f"Claude selected tool: {tool_use_block.name}({args})")
-                return {"name": tool_use_block.name, "args": args}
-
-            # If Claude responded with text instead of a tool call
-            text_block = next((b for b in response.content if b.type == "text"), None)
-            if text_block is not None:
-                logger.info(f"Claude returned text (no tool call): {text_block.text[:100]}")
-            return None
-
-        except anthropic.APIStatusError as e:  # includes RateLimitError (429)
-            last_error = e
-            delay = await _after_status_error("Claude", "anthropic", e, attempt, waited)
-            if delay is None:
-                break
-            waited += delay
-
-        except Exception as e:
-            last_error = e
-            logger.error(f"Claude API error (not retried): {type(e).__name__}: {e}")
-            break
-
-    logger.error(f"Claude API gave up after {attempts} attempt(s) and {waited:.1f}s of backoff: {last_error}")
     return None
 
 
@@ -448,7 +357,7 @@ def _extract_date_from_query(query: str) -> str:
 
 def _keyword_intent_detection(query: str) -> Optional[dict]:
     """
-    Simple keyword-based fallback for intent detection when Claude is
+    Simple keyword-based fallback for intent detection when Groq is
     unavailable.
     """
     query_lower = query.lower()
@@ -641,7 +550,7 @@ async def handle_query(query: str, language: str = "en") -> dict:
       0. Greeting/small-talk check — short-circuit with a conversational
          reply, skipping the tool pipeline entirely
       1. Parse intent + extract location/date
-         (Groq → Claude → keyword fallback)
+         (Groq → keyword fallback)
       2. Geocode location → lat/lon
       3. Run selected handler(s)
       4. Synthesise into final response
@@ -658,12 +567,8 @@ async def handle_query(query: str, language: str = "en") -> dict:
             "map_data": None,
         }
 
-    # Step 1: Intent detection — try providers in priority order, only
-    # falling through to the next one if the previous returned None.
+    # Step 1: Intent detection — Groq, or keywords if Groq returns None.
     tool_call = await _call_groq_with_retry(query, language)
-
-    if tool_call is None:
-        tool_call = await _call_claude_with_retry(query, language)
 
     if tool_call is None:
         # Fallback to keyword-based detection

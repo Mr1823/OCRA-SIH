@@ -24,7 +24,7 @@
         "question": "Your question",
         "questionSub": "in plain language",
         "orchestrator": "Orchestrator",
-        "orchestratorSub": "Groq → Claude → keyword fallback",
+        "orchestratorSub": "Groq → keyword fallback",
         "oceanWeather": "Ocean/Weather",
         "riskAssessment": "Risk Assessment",
         "pfzScoring": "PFZ Scoring",
@@ -62,7 +62,7 @@
         "openMeteo": { "name": "Open-Meteo", "role": "Live marine & weather data — wave height, wind, SST, visibility" },
         "imd": { "name": "IMD", "role": "India Meteorological Department — cyclone tracking & coastal bulletins" },
         "copernicus": { "name": "Copernicus Marine Service", "role": "Satellite chlorophyll-a for fishing-zone scoring, with seasonal climatology fallback when unavailable" },
-        "llm": { "name": "Groq + Claude", "role": "LLM reasoning chain for natural-language, conversational answers" }
+        "llm": { "name": "Groq", "role": "LLM reasoning chain for natural-language, conversational answers" }
       }
     },
     "finalCta": {

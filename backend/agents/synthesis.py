@@ -4,8 +4,8 @@ Synthesis Agent — combines handler outputs into a final response with:
   2. evidence     — structured data for the "why this answer" panel
   3. map_data     — markers/center/zoom for the Leaflet map
 
-Tries LLM providers in priority order for natural-language generation
-(Groq → Claude), otherwise falls back to clean template-based responses.
+Uses Groq for natural-language generation when available, otherwise
+falls back to clean template-based responses.
 
 Supports language="en" | "ta" (Tamil) throughout — see the
 PENDING HUMAN REVIEW block below for the Tamil strings that carry
@@ -757,7 +757,7 @@ def _build_prompt(user_query: str, data_summary: str, language: str = "en") -> s
 
 
 # ──────────────────────────────────────────────
-#  LLM-based answer generation (Groq → Claude, if available)
+#  LLM-based answer generation (Groq, if available)
 # ──────────────────────────────────────────────
 
 
@@ -800,49 +800,6 @@ async def _generate_groq_answer(
             logger.warning(f"Groq answer generation failed: {e}")
     except Exception as e:
         logger.warning(f"Groq answer generation failed: {type(e).__name__}: {e}")
-
-    return None
-
-
-async def _generate_llm_answer(
-    handler_result: dict, user_query: str, data_summary: str, language: str = "en"
-) -> str | None:
-    """
-    Use Claude to generate a natural, conversational answer from the
-    structured handler results.  Returns None on failure.
-    """
-    if not config.ANTHROPIC_API_KEY or config.ANTHROPIC_API_KEY == "your_key_here":
-        return None
-    if not provider_available("anthropic"):
-        return None
-
-    try:
-        import anthropic
-    except ImportError:
-        return None
-
-    # Same policy as _generate_groq_answer: one async attempt, short timeout.
-    client = anthropic.AsyncAnthropic(
-        api_key=config.ANTHROPIC_API_KEY, max_retries=0, timeout=config.LLM_REQUEST_TIMEOUT_S
-    )
-    prompt = _build_prompt(user_query, data_summary, language)
-
-    try:
-        response = await client.messages.create(
-            model=config.ANTHROPIC_MODEL,
-            max_tokens=512,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = response.content[0].text
-        if text:
-            return text.strip()
-    except anthropic.APIStatusError as e:
-        if is_account_error(e.status_code, str(e)):
-            mark_provider_unavailable("anthropic", f"account error {e.status_code}: {e}")
-        else:
-            logger.warning(f"LLM answer generation failed: {e}")
-    except Exception as e:
-        logger.warning(f"LLM answer generation failed: {type(e).__name__}: {e}")
 
     return None
 
@@ -1151,9 +1108,7 @@ async def synthesise_response(handler_result: dict, user_query: str, language: s
         # template or LLM attach that day to today's verdict.
         handler_result = {**handler_result, "date": "today"}
 
-    # Generate answer text — try providers in priority order (Groq →
-    # Claude), only falling through if the previous one returned None,
-    # then fall back to templates.
+    # Generate answer text — Groq when available, otherwise templates.
     data_summary = _build_data_summary(handler_result)
     if date_status["status"] == "not_checked":
         data_summary += (
@@ -1168,8 +1123,6 @@ async def synthesise_response(handler_result: dict, user_query: str, language: s
         )
 
     answer_text = await _generate_groq_answer(handler_result, user_query, data_summary, language)
-    if answer_text is None:
-        answer_text = await _generate_llm_answer(handler_result, user_query, data_summary, language)
     if answer_text is None:
         answer_text = _generate_template_answer(handler_result, user_query, language)
 

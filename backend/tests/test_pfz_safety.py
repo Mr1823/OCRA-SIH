@@ -42,7 +42,6 @@ ZONE = {
 @pytest.fixture(autouse=True)
 def _template_answers_only(monkeypatch):
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
 
 
 def _alert(alert_type: str, title: str) -> dict:

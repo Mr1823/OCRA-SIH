@@ -1,7 +1,6 @@
 """
 Tests for the Groq integration in orchestrator.py and synthesis.py —
-the new primary LLM provider in the Groq → Claude → keyword/template
-fallback chain. Mirrors test_claude_llm.py's structure.
+the LLM provider in front of the keyword/template fallback.
 """
 
 from __future__ import annotations
@@ -200,57 +199,3 @@ async def test_generate_groq_answer_missing_key_returns_none(monkeypatch):
 
     assert answer is None
     create_mock.assert_not_called()
-
-
-# ══════════════════════════════════════════════
-#  Provider chain ordering (orchestrator.handle_query)
-# ══════════════════════════════════════════════
-
-
-@pytest.mark.asyncio
-async def test_claude_not_called_when_groq_succeeds(monkeypatch):
-    """
-    Groq succeeding should short-circuit the chain — Claude must not be
-    invoked. Exercises the real handle_query() end-to-end (forcing mock
-    ocean/weather data regardless of the current USE_LIVE_DATA setting
-    in .env, so this stays deterministic).
-    """
-    from unittest.mock import AsyncMock
-    import agents.orchestrator as orch
-
-    monkeypatch.setenv("USE_LIVE_DATA", "false")
-    # Isolate this test to the orchestrator's provider chain — force
-    # synthesis's own Groq/Claude answer generation to skip straight to
-    # the deterministic template, so this doesn't also make a real call
-    # against whatever's actually in config.ANTHROPIC_API_KEY/GROQ_API_KEY.
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
-    monkeypatch.setattr(config, "GROQ_API_KEY", "")
-
-    groq_result = {"name": "assess_sea_safety", "args": {"location": "Chennai", "date": "today"}}
-    with patch.object(orch, "_call_groq_with_retry", new=AsyncMock(return_value=groq_result)), \
-         patch.object(orch, "_call_claude_with_retry", new=AsyncMock()) as claude_mock:
-        result = await orch.handle_query("Is it safe near Chennai today?")
-
-    claude_mock.assert_not_called()
-    assert "answer_text" in result
-    assert result["evidence"]["intent"] == "assess_sea_safety"
-
-
-@pytest.mark.asyncio
-async def test_claude_called_when_groq_returns_none(monkeypatch):
-    """Groq returning None (no key, error, or text-only reply) must fall through to Claude."""
-    from unittest.mock import AsyncMock
-    import agents.orchestrator as orch
-
-    monkeypatch.setenv("USE_LIVE_DATA", "false")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
-    monkeypatch.setattr(config, "GROQ_API_KEY", "")
-
-    claude_result = {"name": "check_alerts", "args": {"location": "Vizag"}}
-    with patch.object(orch, "_call_groq_with_retry", new=AsyncMock(return_value=None)) as groq_mock, \
-         patch.object(orch, "_call_claude_with_retry", new=AsyncMock(return_value=claude_result)) as claude_mock:
-        result = await orch.handle_query("Any alerts near Vizag?")
-
-    groq_mock.assert_called_once()
-    claude_mock.assert_called_once()
-    assert result["evidence"]["intent"] == "check_alerts"

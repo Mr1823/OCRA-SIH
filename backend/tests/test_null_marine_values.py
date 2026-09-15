@@ -175,7 +175,6 @@ def test_unavailable_reading_cannot_mask_an_unsafe_one():
 @pytest.mark.asyncio
 async def test_answer_says_data_is_missing_instead_of_implying_calm(monkeypatch):
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
 
     ocean_weather = _conditions(wave=None)
     ocean_weather.update({
@@ -214,7 +213,6 @@ def test_reproduced_case_kolkata_null_wave_height_returns_honest_200(monkeypatch
 
     monkeypatch.setenv("USE_LIVE_DATA", "true")
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
     monkeypatch.setattr(config, "IMD_API_KEY", "")
 
     marine = _marine_json({"wave_height": None, "wave_period": None}, sst=None)

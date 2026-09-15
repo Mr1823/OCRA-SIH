@@ -1,7 +1,7 @@
 """
-Shared call policy for the LLM providers (Groq → Claude → keyword/template
-fallback): bounded retries, and a cooldown for providers that can't serve
-requests at all.
+Shared call policy for LLM calls (Groq, with a keyword/template fallback):
+bounded retries, and a cooldown for a provider that can't serve requests
+at all.
 
 Why this exists — measured against the previous code with a local fake API
 (Groq: HTTP 429 with retry-after 30 s; Claude: HTTP 400 "credit balance is
@@ -44,7 +44,7 @@ def mark_provider_unavailable(provider: str, reason: str, seconds: Optional[floa
     already_skipped = not provider_available(provider)
     _unavailable_until[provider] = time.monotonic() + seconds
     if not already_skipped:
-        logger.error(f"{provider}: {reason} — skipping it for {seconds:.0f}s")
+        logger.warning(f"{provider}: {reason} — skipping it for {seconds:.0f}s")
 
 
 def reset_provider_status() -> None:

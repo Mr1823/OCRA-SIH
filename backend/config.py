@@ -29,7 +29,7 @@ for env_path in (_backend_dir / ".env", _project_root / ".env"):
 
 
 # ──────────────────────────────────────────────
-#  LLM provider settings (Groq → Claude → keyword fallback)
+#  LLM provider settings (Groq → keyword fallback)
 # ──────────────────────────────────────────────
 
 GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
@@ -38,13 +38,6 @@ GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 # longer serves a plain Llama chat model under that name. Using
 # openai/gpt-oss-120b instead, confirmed working for tool calling.
 GROQ_MODEL: str = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-
-# ──────────────────────────────────────────────
-#  Claude / Anthropic settings
-# ──────────────────────────────────────────────
-
-ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
-ANTHROPIC_MODEL: str = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
 # ──────────────────────────────────────────────
 #  Data source settings
@@ -93,7 +86,7 @@ LLM_RETRY_BASE_DELAY: float = float(os.getenv("LLM_RETRY_BASE_DELAY", "0.5"))  #
 # moves on to the next provider. Bounds the worst case whatever the two
 # settings above are — the PRD targets 8–10 s for a whole response.
 LLM_RETRY_WAIT_BUDGET_S: float = float(os.getenv("LLM_RETRY_WAIT_BUDGET_S", "3.0"))
-# Per-request timeout. The SDK defaults are 60 s (Groq) and 600 s (Anthropic).
+# Per-request timeout. The Groq SDK's default is 60 s.
 LLM_REQUEST_TIMEOUT_S: float = float(os.getenv("LLM_REQUEST_TIMEOUT_S", "8.0"))
 # How long to skip a provider after an error retrying can't fix
 # (invalid key, no credit balance).

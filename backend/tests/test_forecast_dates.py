@@ -35,7 +35,7 @@ NOT_CHECKED_NOTE = "📅 **I can only check current conditions right now, not fo
 
 @pytest.fixture(autouse=True)
 def _deterministic(monkeypatch):
-    """Pin 'today' and use template answers — no Groq/Claude calls."""
+    """Pin 'today' and use template answers — no Groq calls."""
     for module_name in ("utils.dates", "data_sources.live_provider", "agents.synthesis"):
         try:
             module = importlib.import_module(module_name)
@@ -43,7 +43,6 @@ def _deterministic(monkeypatch):
             continue
         monkeypatch.setattr(module, "today_ist", lambda: FIXED_TODAY, raising=False)
     monkeypatch.setattr(config, "GROQ_API_KEY", "")
-    monkeypatch.setattr(config, "ANTHROPIC_API_KEY", "")
 
 
 # ══════════════════════════════════════════════
