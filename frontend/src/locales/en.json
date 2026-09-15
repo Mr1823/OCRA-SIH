@@ -1,0 +1,184 @@
+{
+  "nav": {
+    "openAssistant": "Open Assistant",
+    "home": "← Home"
+  },
+  "landing": {
+    "eyebrow": "Marine Intelligence · SIH 2026 · ISRO Track",
+    "title": "ORCA",
+    "titleSub": "Marine EcOsystem Reasoning with Collaborative Agents",
+    "heroDesc": "An AI marine intelligence assistant that answers sea safety, fishing-zone, and weather-alert questions for Indian fishermen and coastal authorities — from live ocean and weather data, in plain conversation.",
+    "askOrca": "Ask ORCA →",
+    "seeHowItWorks": "See how it works",
+    "problem": {
+      "label": "The Problem",
+      "heading": "Coastal decisions run on fragmented information",
+      "body1": "Fishermen and coastal authorities along India's coastline make daily, safety-critical decisions — whether to go to sea, where to find fish, whether a cyclone is coming — using scattered sources: a weather app here, a radio bulletin there, word of mouth about where the last good catch was.",
+      "body2": "None of it is combined, none of it explains its reasoning, and by the time conflicting signals get reconciled, the window to act safely may have passed."
+    },
+    "solution": {
+      "label": "The Solution",
+      "heading": "One question, one answer, a full evidence trail",
+      "body": "ORCA routes every question through a small team of specialized agents rather than a single opaque model call — so every answer can point to exactly which data and which rule produced it.",
+      "flow": {
+        "question": "Your question",
+        "questionSub": "in plain language",
+        "orchestrator": "Orchestrator",
+        "orchestratorSub": "Groq → Claude → keyword fallback",
+        "oceanWeather": "Ocean/Weather",
+        "riskAssessment": "Risk Assessment",
+        "pfzScoring": "PFZ Scoring",
+        "synthesis": "Synthesis",
+        "synthesisSub": "answer + map + evidence"
+      }
+    },
+    "features": {
+      "label": "What It Does",
+      "heading": "Built around what fishermen actually ask",
+      "items": {
+        "safety": {
+          "title": "Sea Safety Verdicts",
+          "desc": "A live safe / caution / unsafe call for any coastal point, scored from wave height, wind speed, visibility, and active alerts — with the exact thresholds shown, not a black box."
+        },
+        "pfz": {
+          "title": "Potential Fishing Zones",
+          "desc": "Ranked PFZ recommendations from sea-surface temperature and chlorophyll concentration, the same signals used to identify productive fishing grounds."
+        },
+        "alerts": {
+          "title": "Cyclone & Weather Alerts",
+          "desc": "Active cyclone, lightning, and high-wave advisories sourced from IMD bulletins and cyclone tracking, surfaced the moment they matter."
+        },
+        "coverage": {
+          "title": "Tamil Nadu's Full Coastline",
+          "desc": "Every one of Tamil Nadu's 13 coastal districts resolves to a real fishing harbour or coastal town — from Pazhaverkadu to Kanyakumari — plus major coastal cities across India."
+        }
+      }
+    },
+    "tech": {
+      "label": "Data & Reasoning",
+      "heading": "Real sources, honestly labelled",
+      "body": "Every response carries an evidence trail naming exactly which data source answered it — including when a live source is unavailable and a documented fallback was used instead, rather than silently guessing.",
+      "sources": {
+        "openMeteo": { "name": "Open-Meteo", "role": "Live marine & weather data — wave height, wind, SST, visibility" },
+        "imd": { "name": "IMD", "role": "India Meteorological Department — cyclone tracking & coastal bulletins" },
+        "copernicus": { "name": "Copernicus Marine Service", "role": "Satellite chlorophyll-a for fishing-zone scoring, with seasonal climatology fallback when unavailable" },
+        "llm": { "name": "Groq + Claude", "role": "LLM reasoning chain for natural-language, conversational answers" }
+      }
+    },
+    "finalCta": {
+      "heading": "Ask ORCA before you head out."
+    }
+  },
+  "chat": {
+    "tagline": "Marine EcOsystem Reasoning with Collaborative Agents",
+    "title": "ORCA",
+    "subtitle": "Marine Intelligence Assistant",
+    "welcomeTitle": "Welcome to ORCA!",
+    "welcomeDesc": "Ask me about sea safety, fishing zones, or weather alerts along the Indian coast.",
+    "sampleQueries": {
+      "safety": "🛡️ Is it safe to venture into the sea near Chennai?",
+      "pfz": "🐟 Where is the nearest PFZ near Mumbai?",
+      "alerts": "🌀 Are there any cyclone alerts near Vizag?"
+    },
+    "districtPickerPlaceholder": "🌊 Quick-select a Tamil Nadu coastal district…",
+    "inputPlaceholder": "Ask about sea conditions, fishing zones, or alerts…",
+    "send": "Send",
+    "errorPrefix": "⚠️ Error",
+    "errorFallback": "Could not reach the ORCA backend. Is it running?"
+  },
+  "map": {
+    "title": "🗺️ Map View",
+    "markerCount_one": "{{count}} marker",
+    "markerCount_other": "{{count}} markers",
+    "legend": {
+      "location": "Location",
+      "safePfz": "Safe / PFZ",
+      "caution": "Caution",
+      "unsafeAlert": "Unsafe / Alert",
+      "pfzGood": "PFZ (Good)"
+    }
+  },
+  "evidence": {
+    "title": "📋 Evidence Trail",
+    "subtitle": "Why this answer?",
+    "emptyPrompt": "Ask a question to see the reasoning trail here.",
+    "emptyHint": "ORCA shows which agents ran, what data was used, and why it reached its conclusion.",
+    "intents": {
+      "assess_sea_safety": "🛡️ Sea Safety Assessment",
+      "find_nearest_pfz": "🐟 Fishing Zone Discovery",
+      "check_alerts": "🌀 Weather Alert Check"
+    },
+    "sections": {
+      "riskAssessment": "Risk Assessment",
+      "pfzAnalysis": "PFZ Analysis",
+      "activeAlerts": "Active Alerts",
+      "oceanConditions": "Ocean Conditions",
+      "weatherConditions": "Weather Conditions",
+      "tideInformation": "Tide Information",
+      "queryLocation": "Query Location"
+    },
+    "verdict": {
+      "safe": "SAFE",
+      "caution": "CAUTION",
+      "unsafe": "UNSAFE"
+    },
+    "score": "Score",
+    "noAlerts": "✅ No active alerts",
+    "syntheticAlertBadge": "BASELINE — NOT LIVE",
+    "syntheticAlertTooltip": "This alert is illustrative baseline/example data, not a real active warning. Live IMD alert data isn't currently connected.",
+    "fields": {
+      "sst": "SST",
+      "chlorophyll": "Chlorophyll",
+      "waveHeight": "Wave Height",
+      "wavePeriod": "Wave Period",
+      "windSpeed": "Wind Speed",
+      "windDirection": "Wind Direction",
+      "visibility": "Visibility",
+      "temperature": "Temperature",
+      "humidity": "Humidity",
+      "condition": "Condition",
+      "localSst": "Local SST",
+      "localChlorophyll": "Local Chlorophyll",
+      "zonesFound": "Zones Found",
+      "viableZones": "Viable Zones",
+      "current": "Current",
+      "nextChange": "Next Change",
+      "nextType": "Next Type",
+      "tidalRange": "Tidal Range",
+      "name": "Name",
+      "latitude": "Latitude",
+      "longitude": "Longitude"
+    }
+  },
+  "districts": {
+    "thiruvallur": "Thiruvallur",
+    "chennai": "Chennai",
+    "chengalpattu": "Chengalpattu",
+    "villupuram": "Villupuram",
+    "cuddalore": "Cuddalore",
+    "nagapattinam": "Nagapattinam",
+    "thiruvarur": "Thiruvarur",
+    "thanjavur": "Thanjavur",
+    "pudukkottai": "Pudukkottai",
+    "ramanathapuram": "Ramanathapuram",
+    "thoothukudi": "Thoothukudi",
+    "tirunelveli": "Tirunelveli",
+    "kanyakumari": "Kanyakumari"
+  },
+  "towns": {
+    "pazhaverkadu": "Pazhaverkadu (Pulicat)",
+    "chennai": "Chennai",
+    "mamallapuram": "Mamallapuram",
+    "marakkanam": "Marakkanam",
+    "cuddalore": "Cuddalore",
+    "nagapattinam": "Nagapattinam",
+    "vedaranyam": "Vedaranyam",
+    "pointCalimere": "Point Calimere (Kodiakkarai)",
+    "kottaipattinam": "Kottaipattinam",
+    "rameshwaram": "Rameshwaram",
+    "thoothukudi": "Thoothukudi",
+    "idinthakarai": "Idinthakarai",
+    "kanyakumari": "Kanyakumari"
+  },
+  "footer": {}
+}

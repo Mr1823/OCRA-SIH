@@ -2,7 +2,8 @@
 Geocoding utility — resolves place names to (lat, lon) coordinates.
 
 Uses Nominatim (OpenStreetMap) with a hardcoded fallback dictionary of
-~10 Indian coastal cities so the demo works without network access.
+Indian coastal cities (plus all 13 coastal districts of Tamil Nadu) so
+the demo works without network access.
 """
 
 from __future__ import annotations
@@ -48,6 +49,83 @@ _COASTAL_CITIES: dict[str, Tuple[float, float, str]] = {
     "kolkata": (22.57, 88.36, "Kolkata, West Bengal"),
     "calcutta": (22.57, 88.36, "Kolkata, West Bengal"),
 }
+
+
+# ──────────────────────────────────────────────
+#  Tamil Nadu's 13 coastal districts
+#
+#  One verified coastal fishing-harbour/town per district (not the
+#  district HQ where that's inland). Coordinates checked against
+#  Wikipedia and/or OSM Nominatim on 2026-09-13, not estimated.
+#
+#  Two substitutions from the towns most commonly suggested for these
+#  districts, made because those towns are administratively in a
+#  different district than expected:
+#    - Ramanathapuram already had Rameshwaram in _COASTAL_CITIES above;
+#      reused rather than re-verifying Mandapam separately.
+#    - Tirunelveli: Manapad and Kulasekarapattinam are both actually in
+#      Thoothukudi district (confirmed via Wikipedia/census records),
+#      not Tirunelveli. Used Idinthakarai instead — a genuinely coastal
+#      village in Radhapuram taluk, Tirunelveli district, verified via
+#      OSM Nominatim (osm node 1811823206).
+#
+#  Note: Pazhaverkadu's verified coordinate sits on the mainland
+#  (lagoon-facing) shore of Pulicat Lake, not the open-sea barrier
+#  island side — see the live-data test notes for whether Open-Meteo's
+#  marine grid actually covers this point.
+# ──────────────────────────────────────────────
+
+# Tamil-script names for each district and town below were verified via
+# web search (Tamil Wikipedia, Government of Tamil Nadu district sites,
+# census records) on 2026-09-14, not guessed — see the individual
+# searches in the session transcript. Flagged here so a Tamil speaker
+# can double-check them; these are place names, not the safety-verdict
+# strings in synthesis.py (see the TAMIL TRANSLATIONS — PENDING HUMAN
+# REVIEW block there for the ones that actually carry safety meaning).
+_TN_COASTAL_DISTRICTS: list[Tuple[str, str, float, float, str, str]] = [
+    # (district_en, town_en, lat, lon, district_ta, town_ta)
+    ("Thiruvallur", "Pazhaverkadu (Pulicat)", 13.4177, 80.3167, "திருவள்ளூர்", "பழவேற்காடு"),
+    ("Chennai", "Chennai", 13.08, 80.27, "சென்னை", "சென்னை"),
+    ("Chengalpattu", "Mamallapuram", 12.6197, 80.1944, "செங்கல்பட்டு", "மாமல்லபுரம்"),
+    ("Villupuram", "Marakkanam", 12.20, 79.95, "விழுப்புரம்", "மரக்காணம்"),
+    ("Cuddalore", "Cuddalore", 11.7393, 79.7865, "கடலூர்", "கடலூர்"),
+    ("Nagapattinam", "Nagapattinam", 10.7641, 79.8496, "நாகப்பட்டினம்", "நாகப்பட்டினம்"),
+    ("Thiruvarur", "Vedaranyam", 10.3774, 79.8495, "திருவாரூர்", "வேதாரண்யம்"),
+    ("Thanjavur", "Point Calimere (Kodiakkarai)", 10.2845, 79.8241, "தஞ்சாவூர்", "கோடியக்கரை"),
+    ("Pudukkottai", "Kottaipattinam", 9.9791, 79.1986, "புதுக்கோட்டை", "கோட்டைப்பட்டினம்"),
+    ("Ramanathapuram", "Rameshwaram", 9.29, 79.31, "இராமநாதபுரம்", "இராமேஸ்வரம்"),
+    ("Thoothukudi", "Thoothukudi", 8.76, 78.13, "தூத்துக்குடி", "தூத்துக்குடி"),
+    ("Tirunelveli", "Idinthakarai", 8.1787, 77.7451, "திருநெல்வேலி", "இடிந்தகரை"),
+    ("Kanyakumari", "Kanyakumari", 8.0883, 77.5385, "கன்னியாகுமரி", "கன்னியாகுமரி"),
+]
+
+# Populate the lookup dict from the canonical list above — English town
+# name, English district name, Tamil town name, and Tamil district name
+# all resolve to the same coordinates, without clobbering entries
+# already defined for Chennai/Thoothukudi/Rameshwaram/Puducherry etc.
+for _district, _town, _lat, _lon, _district_ta, _town_ta in _TN_COASTAL_DISTRICTS:
+    _display = f"{_town}, {_district} District, Tamil Nadu"
+    _town_key = _town.split(" (")[0].lower()  # "Pazhaverkadu (Pulicat)" → "pazhaverkadu"
+    _COASTAL_CITIES.setdefault(_town_key, (_lat, _lon, _display))
+    _COASTAL_CITIES.setdefault(_district.lower(), (_lat, _lon, _display))
+    # Tamil script has no case, so these are used exactly as written —
+    # geocode()'s .lower().strip() call is a no-op on non-Latin script.
+    _COASTAL_CITIES.setdefault(_town_ta, (_lat, _lon, _display))
+    _COASTAL_CITIES.setdefault(_district_ta, (_lat, _lon, _display))
+
+# A few extra common alternate names, aliased to the canonical entries above.
+_TN_EXTRA_ALIASES = {
+    "pulicat": "pazhaverkadu",
+    "mahabalipuram": "mamallapuram",
+    "kodiakkarai": "point calimere",
+    "kodikkarai": "point calimere",
+    "mandapam": "rameshwaram",
+    "புலிகட்": "பழவேற்காடு",
+    "மகாபலிபுரம்": "மாமல்லபுரம்",
+}
+for _alias, _canonical in _TN_EXTRA_ALIASES.items():
+    if _canonical in _COASTAL_CITIES:
+        _COASTAL_CITIES.setdefault(_alias, _COASTAL_CITIES[_canonical])
 
 
 # ──────────────────────────────────────────────
@@ -142,3 +220,16 @@ async def geocode(place_name: str) -> Tuple[float, float, str]:
         f"Could not resolve location: '{place_name}'. "
         f"Try a specific Indian coastal city name like Chennai, Mumbai, or Vizag."
     )
+
+
+def get_all_tn_coastal_points() -> list[Tuple[str, str, float, float, str, str]]:
+    """
+    Return (district_en, town_en, lat, lon, district_ta, town_ta) for
+    all 13 coastal districts of Tamil Nadu.
+
+    Lets a caller — e.g. a future "browse all Tamil Nadu conditions"
+    feature — iterate every district in one call, without needing to
+    know each district's representative coastal town by name, in
+    either language.
+    """
+    return list(_TN_COASTAL_DISTRICTS)

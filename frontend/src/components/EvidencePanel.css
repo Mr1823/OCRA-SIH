@@ -2,14 +2,14 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #0a1628;
-  border-left: 1px solid #1e3a5f;
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
 }
 
 .evidence-header {
   padding: 12px 16px;
-  background: linear-gradient(135deg, #0d1f3c 0%, #162d50 100%);
-  border-bottom: 1px solid #1e3a5f;
+  background: linear-gradient(135deg, var(--color-bg-alt) 0%, var(--color-surface) 100%);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -18,18 +18,18 @@
 .evidence-header h3 {
   margin: 0;
   font-size: 1rem;
-  color: #4fc3f7;
+  color: var(--color-accent-bright);
 }
 
 .evidence-subtitle {
   font-size: 0.78rem;
-  color: #7a9cc6;
+  color: var(--color-text-muted);
 }
 
 .evidence-empty {
   padding: 40px 20px;
   text-align: center;
-  color: #7a9cc6;
+  color: var(--color-text-muted);
 }
 
 .evidence-empty p:first-child {
@@ -39,32 +39,32 @@
 
 .evidence-hint {
   font-size: 0.82rem;
-  color: #5a7da8;
+  color: var(--color-text-dim);
 }
 
 .evidence-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: var(--space-md);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-md);
 }
 
 /* Meta section */
 .evidence-meta {
-  background: #162d50;
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: var(--color-surface);
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm) 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-xs);
 }
 
 .meta-intent {
   font-size: 0.92rem;
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--color-text);
 }
 
 .meta-agents {
@@ -78,7 +78,7 @@
   padding: 2px 10px;
   border-radius: 10px;
   background: #1a3a5c;
-  color: #4fc3f7;
+  color: var(--color-accent-bright);
   border: 1px solid #1e4a6f;
 }
 
@@ -91,7 +91,7 @@
 
 .source-badge {
   background: #1a3a5c;
-  color: #81d4fa;
+  color: var(--color-accent-bright);
   padding: 2px 8px;
   border-radius: 8px;
   font-size: 0.72rem;
@@ -100,14 +100,14 @@
 }
 
 .timestamp {
-  color: #5a7da8;
+  color: var(--color-text-dim);
 }
 
 /* Collapsible sections */
 .evidence-section {
   background: #111e33;
   border-radius: 8px;
-  border: 1px solid #1e3a5f;
+  border: 1px solid var(--color-border);
   overflow: hidden;
 }
 
@@ -119,7 +119,7 @@
   padding: 10px 14px;
   border: none;
   background: transparent;
-  color: #b0caec;
+  color: var(--color-text-muted);
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 600;
@@ -127,17 +127,20 @@
 }
 
 .section-header:hover {
-  background: #162d50;
+  background: var(--color-surface);
 }
 
 .section-chevron {
-  color: #5a7da8;
+  color: var(--color-text-dim);
   font-size: 0.9rem;
 }
 
 .section-content {
-  padding: 8px 14px 12px;
-  border-top: 1px solid #1e3a5f;
+  padding: var(--space-sm) 14px var(--space-md);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
 }
 
 /* Data rows */
@@ -149,16 +152,16 @@
 }
 
 .data-label {
-  color: #7a9cc6;
+  color: var(--color-text-muted);
 }
 
 .data-value {
-  color: #e0e0e0;
+  color: var(--color-text);
   font-weight: 500;
 }
 
 .data-unit {
-  color: #5a7da8;
+  color: var(--color-text-dim);
   font-weight: 400;
 }
 
@@ -166,8 +169,7 @@
 .risk-summary {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--space-sm);
 }
 
 .verdict-badge {
@@ -180,7 +182,7 @@
 
 .risk-score {
   font-size: 0.85rem;
-  color: #b0caec;
+  color: var(--color-text-muted);
 }
 
 .threshold-row {
@@ -193,12 +195,12 @@
 
 .threshold-param {
   flex: 1;
-  color: #7a9cc6;
+  color: var(--color-text-muted);
   text-transform: capitalize;
 }
 
 .threshold-value {
-  color: #e0e0e0;
+  color: var(--color-text);
   min-width: 50px;
   text-align: right;
 }
@@ -230,7 +232,7 @@
 
 .status-unknown {
   background: rgba(158, 158, 158, 0.15);
-  color: #9e9e9e;
+  color: var(--color-text-dim);
 }
 
 /* Alerts */
@@ -242,23 +244,47 @@
 
 .alert-card {
   background: #1a2233;
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+  border-radius: var(--radius-sm);
+  padding: var(--space-sm);
   border-left: 3px solid #ff9800;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Fabricated alert data (mock fixtures, or IMD's "imd_baseline"
+   fallback) — visually distinct so it's unmistakable even without
+   reading the qualifier text, per the fake-alert-data fix. */
+.alert-card-synthetic {
+  border-left-color: var(--color-text-dim);
+  border: 1px dashed var(--color-border-bright);
+  border-left-width: 3px;
+  background: var(--color-surface);
+}
+
+.synthetic-badge {
+  align-self: flex-start;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: rgba(140, 164, 194, 0.15);
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border-bright);
+  cursor: help;
 }
 
 .alert-title {
   font-weight: 600;
-  color: #e0e0e0;
+  color: var(--color-text);
   font-size: 0.85rem;
-  margin-bottom: 4px;
 }
 
 .alert-meta {
   display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--space-xs);
 }
 
 .alert-severity {
@@ -285,12 +311,12 @@
 
 .alert-type {
   font-size: 0.72rem;
-  color: #7a9cc6;
+  color: var(--color-text-muted);
 }
 
 .alert-message {
   font-size: 0.8rem;
-  color: #9ab3d4;
+  color: var(--color-text-muted);
   margin: 0;
   line-height: 1.4;
 }
@@ -305,7 +331,7 @@
 }
 
 .evidence-body::-webkit-scrollbar-thumb {
-  background: #1e3a5f;
+  background: var(--color-border);
   border-radius: 3px;
 }
 

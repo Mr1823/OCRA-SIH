@@ -2,8 +2,8 @@
 Integration tests for orchestrator + synthesis (keyword fallback mode).
 
 These tests verify the full pipeline: query → intent detection →
-geocoding → handler execution → synthesis, WITHOUT requiring a
-Gemini API key (uses keyword-based fallback).
+geocoding → handler execution → synthesis, WITHOUT requiring an
+Anthropic API key (uses keyword-based fallback).
 """
 
 from __future__ import annotations
@@ -16,8 +16,17 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Ensure no API key is set so we test the keyword fallback path
-os.environ.pop("GEMINI_API_KEY", None)
+# Ensure no API key is visible before config.py's first import in this session
+os.environ.pop("ANTHROPIC_API_KEY", None)
+
+import config
+
+# Belt-and-suspenders: config.py may already have been imported (and its
+# module-level os.getenv() already evaluated) by an earlier-collected test
+# module, in which case the env-var pop above is too late to matter — force
+# the cached attribute directly so orchestrator/synthesis reliably take the
+# keyword/template fallback path instead of spending real API quota.
+config.ANTHROPIC_API_KEY = ""
 
 from agents.orchestrator import (
     handle_query,

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import './EvidencePanel.css';
 
 function CollapsibleSection({ title, defaultOpen = false, children }) {
@@ -28,33 +29,41 @@ function DataRow({ label, value, unit = '' }) {
   );
 }
 
-function VerdictBadge({ verdict }) {
+function VerdictBadge({ verdict, t }) {
   const config = {
-    safe: { emoji: '✅', color: '#4caf50', label: 'SAFE' },
-    caution: { emoji: '⚠️', color: '#ff9800', label: 'CAUTION' },
-    unsafe: { emoji: '🚫', color: '#f44336', label: 'UNSAFE' },
+    safe: { emoji: '✅', color: '#4caf50' },
+    caution: { emoji: '⚠️', color: '#ff9800' },
+    unsafe: { emoji: '🚫', color: '#f44336' },
   };
   const v = config[verdict] || config.caution;
+  const label = t(`evidence.verdict.${verdict}`, { defaultValue: t('evidence.verdict.caution') });
   return (
     <span className="verdict-badge" style={{ borderColor: v.color, color: v.color }}>
-      {v.emoji} {v.label}
+      {v.emoji} {label}
     </span>
   );
 }
 
+// Backend threshold param keys (risk_assessment.py) → evidence.fields.* translation keys
+const THRESHOLD_PARAM_LABEL_KEYS = {
+  wave_height: 'waveHeight',
+  wind_speed: 'windSpeed',
+  visibility: 'visibility',
+  alerts: 'sections.activeAlerts',
+};
+
 export default function EvidencePanel({ evidence }) {
+  const { t } = useTranslation();
+
   if (!evidence || Object.keys(evidence).length === 0) {
     return (
       <div className="evidence-panel">
         <div className="evidence-header">
-          <h3>📋 Evidence Trail</h3>
+          <h3>{t('evidence.title')}</h3>
         </div>
         <div className="evidence-empty">
-          <p>Ask a question to see the reasoning trail here.</p>
-          <p className="evidence-hint">
-            ORCA shows which agents ran, what data was used, and why it reached
-            its conclusion.
-          </p>
+          <p>{t('evidence.emptyPrompt')}</p>
+          <p className="evidence-hint">{t('evidence.emptyHint')}</p>
         </div>
       </div>
     );
@@ -77,23 +86,17 @@ export default function EvidencePanel({ evidence }) {
   const weather = conditions_summary.weather || {};
   const tide = conditions_summary.tide || {};
 
-  const intentLabels = {
-    assess_sea_safety: '🛡️ Sea Safety Assessment',
-    find_nearest_pfz: '🐟 Fishing Zone Discovery',
-    check_alerts: '🌀 Weather Alert Check',
-  };
-
   return (
     <div className="evidence-panel">
       <div className="evidence-header">
-        <h3>📋 Evidence Trail</h3>
-        <span className="evidence-subtitle">Why this answer?</span>
+        <h3>{t('evidence.title')}</h3>
+        <span className="evidence-subtitle">{t('evidence.subtitle')}</span>
       </div>
 
       <div className="evidence-body">
         {/* Intent & Agents */}
         <div className="evidence-meta">
-          <div className="meta-intent">{intentLabels[intent] || intent}</div>
+          <div className="meta-intent">{t(`evidence.intents.${intent}`, { defaultValue: intent })}</div>
           <div className="meta-agents">
             {agents_invoked.map((a, i) => (
               <span key={i} className="agent-tag">{a}</span>
@@ -103,7 +106,7 @@ export default function EvidencePanel({ evidence }) {
             <span className="source-badge">{data_source || 'mock'}</span>
             {data_timestamp && (
               <span className="timestamp">
-                Data: {new Date(data_timestamp).toLocaleTimeString()}
+                {new Date(data_timestamp).toLocaleTimeString()}
               </span>
             )}
           </div>
@@ -111,18 +114,22 @@ export default function EvidencePanel({ evidence }) {
 
         {/* Risk Assessment (safety queries) */}
         {risk_assessment && (
-          <CollapsibleSection title="Risk Assessment" defaultOpen={true}>
+          <CollapsibleSection title={t('evidence.sections.riskAssessment')} defaultOpen={true}>
             <div className="risk-summary">
-              <VerdictBadge verdict={risk_assessment.verdict} />
+              <VerdictBadge verdict={risk_assessment.verdict} t={t} />
               <span className="risk-score">
-                Score: {risk_assessment.risk_score}/100
+                {t('evidence.score')}: {risk_assessment.risk_score}/100
               </span>
             </div>
             {risk_assessment.thresholds_applied &&
               Object.entries(risk_assessment.thresholds_applied).map(
                 ([param, info]) => (
                   <div key={param} className="threshold-row">
-                    <span className="threshold-param">{param}</span>
+                    <span className="threshold-param">
+                      {t(`evidence.fields.${THRESHOLD_PARAM_LABEL_KEYS[param] || param}`, {
+                        defaultValue: param,
+                      })}
+                    </span>
                     <span className="threshold-value">
                       {info.value !== undefined
                         ? typeof info.value === 'number'
@@ -133,7 +140,7 @@ export default function EvidencePanel({ evidence }) {
                     <span
                       className={`threshold-status status-${info.status || 'unknown'}`}
                     >
-                      {info.status || '?'}
+                      {t(`evidence.verdict.${info.status}`, { defaultValue: info.status || '?' })}
                     </span>
                   </div>
                 ),
@@ -143,36 +150,38 @@ export default function EvidencePanel({ evidence }) {
 
         {/* PFZ Analysis */}
         {pfz_analysis && (
-          <CollapsibleSection title="PFZ Analysis" defaultOpen={true}>
+          <CollapsibleSection title={t('evidence.sections.pfzAnalysis')} defaultOpen={true}>
             <DataRow
-              label="Local SST"
+              label={t('evidence.fields.localSst')}
               value={pfz_analysis.current_location_sst}
               unit="°C"
             />
             <DataRow
-              label="Local Chlorophyll"
+              label={t('evidence.fields.localChlorophyll')}
               value={pfz_analysis.current_location_chlorophyll}
               unit="mg/m³"
             />
-            <DataRow
-              label="Zones Found"
-              value={pfz_analysis.total_zones}
-            />
-            <DataRow
-              label="Viable Zones"
-              value={pfz_analysis.viable_zones}
-            />
+            <DataRow label={t('evidence.fields.zonesFound')} value={pfz_analysis.total_zones} />
+            <DataRow label={t('evidence.fields.viableZones')} value={pfz_analysis.viable_zones} />
           </CollapsibleSection>
         )}
 
         {/* Alerts */}
         {alerts && (
-          <CollapsibleSection title="Active Alerts" defaultOpen={true}>
+          <CollapsibleSection title={t('evidence.sections.activeAlerts')} defaultOpen={true}>
             {alerts.alert_count === 0 ? (
-              <p className="no-alerts">✅ No active alerts</p>
+              <p className="no-alerts">{t('evidence.noAlerts')}</p>
             ) : (
               alerts.active_alerts?.map((a, i) => (
-                <div key={i} className="alert-card">
+                <div
+                  key={i}
+                  className={`alert-card ${alerts.data_is_synthetic ? 'alert-card-synthetic' : ''}`}
+                >
+                  {alerts.data_is_synthetic && (
+                    <span className="synthetic-badge" title={t('evidence.syntheticAlertTooltip')}>
+                      {t('evidence.syntheticAlertBadge')}
+                    </span>
+                  )}
                   <div className="alert-title">{a.title || 'Alert'}</div>
                   <div className="alert-meta">
                     <span className={`alert-severity sev-${a.severity}`}>
@@ -188,69 +197,40 @@ export default function EvidencePanel({ evidence }) {
         )}
 
         {/* Ocean Conditions */}
-        <CollapsibleSection title="Ocean Conditions">
-          <DataRow label="SST" value={ocean.sst_celsius} unit="°C" />
-          <DataRow
-            label="Chlorophyll"
-            value={ocean.chlorophyll_mg_m3}
-            unit="mg/m³"
-          />
-          <DataRow
-            label="Wave Height"
-            value={ocean.wave_height_m}
-            unit="m"
-          />
-          <DataRow
-            label="Wave Period"
-            value={ocean.wave_period_s}
-            unit="s"
-          />
+        <CollapsibleSection title={t('evidence.sections.oceanConditions')}>
+          <DataRow label={t('evidence.fields.sst')} value={ocean.sst_celsius} unit="°C" />
+          <DataRow label={t('evidence.fields.chlorophyll')} value={ocean.chlorophyll_mg_m3} unit="mg/m³" />
+          <DataRow label={t('evidence.fields.waveHeight')} value={ocean.wave_height_m} unit="m" />
+          <DataRow label={t('evidence.fields.wavePeriod')} value={ocean.wave_period_s} unit="s" />
         </CollapsibleSection>
 
         {/* Weather */}
-        <CollapsibleSection title="Weather Conditions">
-          <DataRow
-            label="Wind Speed"
-            value={weather.wind_speed_kmh}
-            unit="km/h"
-          />
-          <DataRow label="Wind Direction" value={weather.wind_direction} />
-          <DataRow
-            label="Visibility"
-            value={weather.visibility_km}
-            unit="km"
-          />
-          <DataRow
-            label="Temperature"
-            value={weather.air_temperature_celsius}
-            unit="°C"
-          />
-          <DataRow label="Humidity" value={weather.humidity_pct} unit="%" />
-          <DataRow label="Condition" value={weather.condition} />
+        <CollapsibleSection title={t('evidence.sections.weatherConditions')}>
+          <DataRow label={t('evidence.fields.windSpeed')} value={weather.wind_speed_kmh} unit="km/h" />
+          <DataRow label={t('evidence.fields.windDirection')} value={weather.wind_direction} />
+          <DataRow label={t('evidence.fields.visibility')} value={weather.visibility_km} unit="km" />
+          <DataRow label={t('evidence.fields.temperature')} value={weather.air_temperature_celsius} unit="°C" />
+          <DataRow label={t('evidence.fields.humidity')} value={weather.humidity_pct} unit="%" />
+          <DataRow label={t('evidence.fields.condition')} value={weather.condition} />
         </CollapsibleSection>
 
         {/* Tide */}
         {tide && Object.keys(tide).length > 0 && (
-          <CollapsibleSection title="Tide Information">
-            <DataRow label="Current" value={tide.current} />
-            <DataRow label="Next Change" value={tide.next_change} />
-            <DataRow label="Next Type" value={tide.next_type} />
-            <DataRow
-              label="Tidal Range"
-              value={tide.tidal_range_m}
-              unit="m"
-            />
+          <CollapsibleSection title={t('evidence.sections.tideInformation')}>
+            <DataRow label={t('evidence.fields.current')} value={tide.current} />
+            <DataRow label={t('evidence.fields.nextChange')} value={tide.next_change} />
+            <DataRow label={t('evidence.fields.nextType')} value={tide.next_type} />
+            <DataRow label={t('evidence.fields.tidalRange')} value={tide.tidal_range_m} unit="m" />
           </CollapsibleSection>
         )}
 
         {/* Location */}
-        <CollapsibleSection title="Query Location">
-          <DataRow label="Name" value={location.name} />
-          <DataRow label="Latitude" value={location.lat} />
-          <DataRow label="Longitude" value={location.lon} />
+        <CollapsibleSection title={t('evidence.sections.queryLocation')}>
+          <DataRow label={t('evidence.fields.name')} value={location.name} />
+          <DataRow label={t('evidence.fields.latitude')} value={location.lat} />
+          <DataRow label={t('evidence.fields.longitude')} value={location.lon} />
         </CollapsibleSection>
       </div>
     </div>
   );
 }
-

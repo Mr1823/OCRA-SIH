@@ -12,8 +12,14 @@ python-dotenv>=1.0.0
 # ── HTTP client (geocoding, live data) ──
 httpx>=0.27.0
 
-# ── Google Gemini SDK ──
-google-generativeai>=0.8.0
+# ── Anthropic Claude SDK ──
+anthropic>=0.125.0
+
+# ── Groq SDK (primary LLM provider) ──
+groq>=1.0.0
+
+# ── Copernicus Marine Service (live chlorophyll-a) ──
+copernicusmarine>=2.0.0
 
 # ── Testing ──
 pytest>=8.0.0

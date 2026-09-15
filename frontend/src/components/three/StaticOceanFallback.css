@@ -1,0 +1,14 @@
+.static-ocean-fallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(14, 165, 233, 0.18) 0%, transparent 70%),
+    repeating-linear-gradient(
+      178deg,
+      transparent 0px,
+      transparent 38px,
+      rgba(34, 211, 238, 0.05) 39px,
+      transparent 40px
+    ),
+    linear-gradient(180deg, #0a1628 0%, #0d1b2a 55%, #0f2138 100%);
+}
