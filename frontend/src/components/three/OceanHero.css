@@ -1,0 +1,20 @@
+.ocean-hero {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.ocean-hero canvas {
+  display: block;
+}
+
+/* Vignette so the canvas fades into the surrounding page rather than
+   ending in a hard rectangular cutoff. */
+.ocean-hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse 75% 75% at 60% 45%, transparent 40%, var(--color-bg) 100%);
+}

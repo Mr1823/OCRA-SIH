@@ -1,0 +1,593 @@
+.landing {
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+  position: relative;
+}
+
+.landing .badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.landing .badge-sih {
+  background: var(--color-accent-dim);
+  color: var(--color-accent-bright);
+  border: 1px solid var(--color-accent-border);
+}
+
+.landing .badge-isro {
+  background: rgba(255, 152, 0, 0.12);
+  color: var(--color-caution);
+  border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+/* ══════════════════════════════════════════════
+   Nav
+   ══════════════════════════════════════════════ */
+.landing-nav {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px clamp(20px, 5vw, 64px);
+  background: rgba(10, 22, 40, 0.6);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.landing-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.landing-nav-logo {
+  font-size: 1.5rem;
+}
+
+.landing-nav-name {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 3px;
+  color: var(--color-text);
+}
+
+.landing-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.landing-nav-cta {
+  margin-left: 6px;
+  padding: 9px 20px;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent);
+  color: #05131f;
+  font-weight: 700;
+  font-size: 0.82rem;
+  transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, transform 0.2s ease;
+}
+
+.landing-nav-cta:hover {
+  background: var(--color-accent-bright);
+  box-shadow: var(--shadow-glow-accent);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+/* ══════════════════════════════════════════════
+   Hero — oversized type, layered glow, vignetted canvas
+   ══════════════════════════════════════════════ */
+.hero {
+  position: relative;
+  min-height: min(96vh, 900px);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+  background: radial-gradient(ellipse 120% 80% at 15% 20%, rgba(14, 165, 233, 0.08) 0%, transparent 55%),
+    var(--color-bg);
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    100deg,
+    rgba(10, 22, 40, 0.97) 0%,
+    rgba(10, 22, 40, 0.88) 30%,
+    rgba(10, 22, 40, 0.4) 60%,
+    rgba(10, 22, 40, 0.6) 100%
+  );
+  pointer-events: none;
+}
+
+/* Soft cyan glow bleeding from behind the 3D wave, blending its hard
+   canvas edge into the surrounding flat background. */
+.hero-glow {
+  position: absolute;
+  z-index: 1;
+  right: -10%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 65%;
+  height: 70%;
+  background: radial-gradient(ellipse 60% 60% at 60% 50%, rgba(34, 211, 238, 0.22) 0%, transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  max-width: 680px;
+  padding: 0 clamp(20px, 6vw, 80px);
+}
+
+.hero-eyebrow {
+  font-family: var(--font-heading);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--color-accent-bright);
+  margin-bottom: 26px;
+}
+
+.hero-title {
+  font-family: var(--font-heading);
+  font-size: clamp(5.5rem, 13vw, 9rem);
+  font-weight: 700;
+  line-height: 0.85;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+  margin-bottom: 20px;
+  text-shadow: 0 0 60px rgba(34, 211, 238, 0.2);
+}
+
+.hero-title-sub {
+  font-size: 1.15rem;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--color-text-muted);
+  font-family: var(--font-body);
+  margin-bottom: 28px;
+  max-width: 480px;
+}
+
+.hero-desc {
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+  max-width: 540px;
+  margin-bottom: 42px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 17px 34px;
+  border-radius: var(--radius-sm);
+  background: var(--color-cta);
+  color: var(--color-cta-text);
+  font-weight: 700;
+  font-size: 1.02rem;
+  box-shadow: var(--shadow-glow-cta);
+  transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease;
+}
+
+.btn-cta:hover {
+  background: var(--color-cta-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 0 40px rgba(245, 166, 35, 0.5), 0 16px 36px rgba(245, 166, 35, 0.3);
+  text-decoration: none;
+}
+
+.btn-ghost {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border-bright);
+  padding-bottom: 3px;
+  transition: border-color 0.3s ease, color 0.3s ease;
+}
+
+.btn-ghost:hover {
+  color: var(--color-accent-bright);
+  border-color: var(--color-accent-bright);
+  text-decoration: none;
+}
+
+/* ══════════════════════════════════════════════
+   Generic section scaffolding — generous, uneven rhythm
+   ══════════════════════════════════════════════ */
+.section {
+  position: relative;
+  padding: clamp(110px, 16vw, 200px) clamp(20px, 6vw, 80px);
+  overflow: hidden;
+}
+
+.section-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.section-problem {
+  background: var(--color-bg);
+}
+
+.section-solution {
+  background: linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-surface) 100%);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.section-features {
+  background: var(--color-bg);
+}
+
+.section-tech {
+  background: linear-gradient(180deg, var(--color-bg-alt) 0%, var(--color-surface) 100%);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.section-label {
+  display: inline-block;
+  font-family: var(--font-heading);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--color-accent);
+  margin-bottom: 18px;
+}
+
+.section h2 {
+  font-size: clamp(2.1rem, 4.6vw, 3.4rem);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  max-width: 780px;
+  margin-bottom: 26px;
+  color: var(--color-text);
+}
+
+.section-lead {
+  font-size: 1.1rem;
+  line-height: 1.75;
+  color: var(--color-text-muted);
+  max-width: 640px;
+  margin-bottom: 18px;
+}
+
+.section-lead:last-child {
+  margin-bottom: 0;
+}
+
+/* ══════════════════════════════════════════════
+   Problem — asymmetric two-column
+   ══════════════════════════════════════════════ */
+.problem-grid {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: clamp(32px, 6vw, 80px);
+  align-items: start;
+}
+
+.problem-heading-col h2 {
+  margin-bottom: 0;
+}
+
+.problem-body-col {
+  padding-top: 6px;
+}
+
+/* ══════════════════════════════════════════════
+   Solution — agent flow diagram
+   ══════════════════════════════════════════════ */
+.agent-flow {
+  margin-top: 56px;
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+.agent-node,
+.agent-node-group {
+  flex-shrink: 0;
+}
+
+.agent-node {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 150px;
+  padding: 16px 18px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-bright);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+
+.agent-node:hover {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-glow-accent);
+  transform: translateY(-3px);
+}
+
+.agent-node-entry,
+.agent-node-exit {
+  border-color: var(--color-accent-border);
+  background: var(--color-accent-dim);
+}
+
+.agent-node-label {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.agent-node-sub {
+  font-size: 0.72rem;
+  color: var(--color-text-dim);
+}
+
+.agent-node-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-node-group .agent-node {
+  min-width: 150px;
+  padding: 10px 18px;
+}
+
+.agent-arrow {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-dim);
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════
+   Features
+   ══════════════════════════════════════════════ */
+.feature-grid {
+  margin-top: 52px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--color-border);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.feature-card {
+  background: var(--color-surface);
+  padding: 36px;
+  position: relative;
+  transition: background 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s ease;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s ease;
+}
+
+.feature-card:hover {
+  background: var(--color-surface-raised);
+  transform: translateY(-6px);
+  box-shadow: var(--shadow-glow-accent);
+  z-index: 2;
+}
+
+.feature-card:hover::before {
+  transform: scaleX(1);
+}
+
+.feature-icon {
+  font-size: 1.9rem;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.feature-card h3 {
+  font-family: var(--font-heading);
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--color-text);
+}
+
+.feature-card p {
+  font-size: 0.93rem;
+  line-height: 1.65;
+  color: var(--color-text-muted);
+}
+
+/* ══════════════════════════════════════════════
+   Tech / data sources
+   ══════════════════════════════════════════════ */
+.data-source-list {
+  margin-top: 44px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--color-border);
+}
+
+.data-source-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 24px;
+  padding: 20px 4px;
+  border-bottom: 1px solid var(--color-border);
+  align-items: baseline;
+  border-radius: var(--radius-sm);
+  transition: background 0.3s ease, padding-left 0.3s ease;
+}
+
+.data-source-row:hover {
+  background: var(--color-surface);
+  padding-left: 14px;
+}
+
+.data-source-name {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  color: var(--color-accent-bright);
+  font-size: 0.98rem;
+}
+
+.data-source-role {
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* ══════════════════════════════════════════════
+   Final CTA
+   ══════════════════════════════════════════════ */
+.section-final-cta {
+  background: radial-gradient(ellipse 80% 100% at 50% 100%, rgba(14, 165, 233, 0.12) 0%, transparent 60%),
+    linear-gradient(135deg, var(--color-bg-alt) 0%, var(--color-surface) 100%);
+}
+
+.section-final-cta-inner {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+
+.section-final-cta h2 {
+  max-width: none;
+  margin-bottom: 0;
+}
+
+.btn-cta-large {
+  padding: 20px 44px;
+  font-size: 1.15rem;
+}
+
+/* ══════════════════════════════════════════════
+   Footer
+   ══════════════════════════════════════════════ */
+.landing-footer {
+  padding: 32px clamp(20px, 6vw, 80px) 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.footer-badges {
+  display: flex;
+  gap: 8px;
+}
+
+/* ══════════════════════════════════════════════
+   Responsive
+   ══════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .hero::after {
+    background: linear-gradient(
+      180deg,
+      rgba(10, 22, 40, 0.55) 0%,
+      rgba(10, 22, 40, 0.88) 55%,
+      rgba(10, 22, 40, 0.98) 100%
+    );
+  }
+
+  .hero-glow {
+    width: 100%;
+    right: 0;
+  }
+
+  .hero-content {
+    max-width: 100%;
+    padding-top: 60px;
+    padding-bottom: 60px;
+  }
+
+  .hero-title {
+    font-size: clamp(3.4rem, 16vw, 5.5rem);
+  }
+
+  .problem-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-source-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .landing-nav-right .badge {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   Reduced motion — neutralize hover lift/scale transforms too, not
+   just the scroll-reveal (already handled globally in index.css)
+   ══════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  .btn-cta:hover,
+  .landing-nav-cta:hover,
+  .feature-card:hover,
+  .agent-node:hover {
+    transform: none;
+  }
+}

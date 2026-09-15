@@ -59,6 +59,11 @@ class QueryRequest(BaseModel):
         description="Natural-language question about sea conditions",
         examples=["Is it safe to go fishing near Chennai today?"],
     )
+    language: str = Field(
+        "en",
+        description="UI language for the response — 'en' or 'ta' (Tamil). Defaults to English.",
+        examples=["en", "ta"],
+    )
 
 
 class MapMarker(BaseModel):
@@ -94,7 +99,7 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     timestamp: str
     version: str = "0.1.0"
-    gemini_configured: bool
+    llm_configured: bool
 
 
 # ──────────────────────────────────────────────
@@ -102,15 +107,112 @@ class HealthResponse(BaseModel):
 # ──────────────────────────────────────────────
 
 
+async def _check_groq_reachable() -> bool:
+    """
+    Perform a trivial live call against the configured Groq model so
+    startup logs show whether the API is *actually* reachable, rather
+    than just whether an API key string is present.
+    """
+    try:
+        import groq
+    except ImportError:
+        logger.error("   Groq ping    : ❌ groq package is not installed")
+        return False
+
+    try:
+        client = groq.Groq(api_key=config.GROQ_API_KEY, max_retries=0)
+        client.chat.completions.create(
+            model=config.GROQ_MODEL,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return True
+    except Exception as e:
+        logger.error(f"   Groq ping    : ❌ FAILED — {e}")
+        return False
+
+
+async def _check_claude_reachable() -> bool:
+    """
+    Perform a trivial live call against the configured Claude model so
+    startup logs show whether the API is *actually* reachable, rather
+    than just whether an API key string is present. A key can be set
+    but the model name wrong/retired — that should be loud, not silent.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        logger.error("   Claude ping  : ❌ anthropic package is not installed")
+        return False
+
+    try:
+        client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, max_retries=0)
+        client.messages.create(
+            model=config.ANTHROPIC_MODEL,
+            max_tokens=1,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return True
+    except Exception as e:
+        logger.error(f"   Claude ping  : ❌ FAILED — {e}")
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown events."""
     logger.info("🐋 ORCA backend starting …")
-    logger.info(f"   Gemini model : {config.GEMINI_MODEL}")
+
+    # Which .env (if any) actually supplied config, and what USE_LIVE_DATA
+    # resolved to — logged explicitly so "is this using live data or mock"
+    # is never something you have to guess or infer from behavior.
     logger.info(
-        f"   Gemini API   : {'✅ configured' if config.GEMINI_API_KEY and config.GEMINI_API_KEY != 'your_gemini_api_key_here' else '⚠️  not set (keyword fallback)'}"
+        f"   .env file    : {config.LOADED_ENV_PATH or '⚠️  none found — using process env / defaults'}"
     )
-    logger.info(f"   Live data    : {'ON' if config.USE_LIVE_DATA else 'OFF (mock)'}")
+    logger.info(
+        f"   USE_LIVE_DATA: {config.USE_LIVE_DATA} "
+        f"({'live Open-Meteo/IMD/Copernicus data' if config.USE_LIVE_DATA else 'mock data from mock_data/*.json'})"
+    )
+
+    # ── Groq (primary provider) ──
+    logger.info(f"   Groq model   : {config.GROQ_MODEL}")
+    groq_key_set = bool(config.GROQ_API_KEY and config.GROQ_API_KEY != "your_groq_api_key_here")
+    logger.info(
+        f"   Groq API     : {'✅ configured' if groq_key_set else '⚠️  not set'}"
+    )
+    if groq_key_set:
+        if await _check_groq_reachable():
+            logger.info(f"   Groq ping    : ✅ reachable with model '{config.GROQ_MODEL}'")
+        else:
+            logger.warning(
+                "   Groq ping    : falling back to the next provider at request "
+                "time — see error above"
+            )
+
+    # ── Claude (fallback provider) ──
+    logger.info(f"   Claude model : {config.ANTHROPIC_MODEL}")
+    llm_key_set = bool(
+        config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "your_key_here"
+    )
+    logger.info(
+        f"   Claude API   : {'✅ configured' if llm_key_set else '⚠️  not set'}"
+    )
+
+    if llm_key_set:
+        if await _check_claude_reachable():
+            logger.info(f"   Claude ping  : ✅ reachable with model '{config.ANTHROPIC_MODEL}'")
+        else:
+            logger.warning(
+                "   Claude ping  : falling back to keyword-based intent detection "
+                "at request time — see error above"
+            )
+
+    if not groq_key_set and not llm_key_set:
+        logger.warning(
+            "   LLM provider : none configured — every query uses keyword-based "
+            "intent detection and template answers"
+        )
+
     logger.info(f"   Listening on : http://0.0.0.0:{config.BACKEND_PORT}")
     yield
     logger.info("🐋 ORCA backend shutting down")
@@ -159,9 +261,9 @@ async def health_check():
     return HealthResponse(
         status="ok",
         timestamp=datetime.now(timezone.utc).isoformat(),
-        gemini_configured=bool(
-            config.GEMINI_API_KEY
-            and config.GEMINI_API_KEY != "your_gemini_api_key_here"
+        llm_configured=bool(
+            (config.GROQ_API_KEY and config.GROQ_API_KEY != "your_groq_api_key_here")
+            or (config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY != "your_key_here")
         ),
     )
 
@@ -178,10 +280,11 @@ async def process_query(req: QueryRequest):
     - "Are there any cyclone alerts near Vizag?"
     """
     start = time.perf_counter()
-    logger.info(f"➡️  Query received: {req.query!r}")
+    language = req.language if req.language in ("en", "ta") else "en"
+    logger.info(f"➡️  Query received: {req.query!r} (language={language!r})")
 
     try:
-        result = await handle_query(req.query)
+        result = await handle_query(req.query, language=language)
     except Exception as e:
         logger.exception(f"Handler error: {e}")
         raise HTTPException(

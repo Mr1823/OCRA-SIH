@@ -1,10 +1,69 @@
-/* ── Global resets & base styles ── */
+/* ══════════════════════════════════════════════
+   ORCA Design Tokens — deep ocean palette
+   ══════════════════════════════════════════════ */
 :root {
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  /* Base surfaces — near-black navy, layered for depth */
+  --color-bg: #0a1628;
+  --color-bg-alt: #0d1b2a;
+  --color-surface: #0f2138;
+  --color-surface-raised: #14293f;
+  --color-border: #1e3a5f;
+  --color-border-bright: #2c5885;
+
+  /* Text */
+  --color-text: #e4ecf5;
+  --color-text-muted: #8ca4c2;
+  --color-text-dim: #5a7da8;
+
+  /* Primary accent — teal/cyan, interactive elements + data highlights */
+  --color-accent: #0ea5e9;
+  --color-accent-bright: #22d3ee;
+  --color-accent-dim: rgba(14, 165, 233, 0.14);
+  --color-accent-border: rgba(14, 165, 233, 0.35);
+
+  /* CTA — warm amber/gold, reserved for primary calls-to-action only */
+  --color-cta: #f5a623;
+  --color-cta-hover: #ffb84d;
+  --color-cta-text: #0a1628;
+
+  /* Semantic safety-signal colors — unchanged, do not alter */
+  --color-safe: #4caf50;
+  --color-caution: #ff9800;
+  --color-unsafe: #f44336;
+  --color-pfz: #00bcd4;
+
+  /* Typography */
+  /* 'Noto Sans Tamil' as a fallback (not primary) so Tamil glyphs
+     render correctly wherever Tamil text appears — Latin text keeps
+     using Space Grotesk/Inter, since fonts only supply glyphs they
+     actually contain and the browser falls through automatically. */
+  --font-heading: 'Space Grotesk', 'Noto Sans Tamil', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', 'Noto Sans Tamil', system-ui, -apple-system, sans-serif;
+
+  /* Elevation — plain shadows for structure, glow shadows for anything
+     interactive/emitting-light (buttons, focused cards) */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.45);
+  --shadow-glow-accent: 0 0 28px rgba(14, 165, 233, 0.35), 0 8px 24px rgba(14, 165, 233, 0.15);
+  --shadow-glow-cta: 0 0 28px rgba(245, 166, 35, 0.35), 0 10px 28px rgba(245, 166, 35, 0.25);
+
+  /* Radius scale — exactly three values, used everywhere */
+  --radius-sm: 12px;
+  --radius-md: 20px;
+  --radius-pill: 999px;
+
+  /* Spacing scale — consistent gaps between cards/sections everywhere */
+  --space-xs: 6px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+
+  font-family: var(--font-body);
   line-height: 1.5;
   font-weight: 400;
-  color: #e0e0e0;
-  background-color: #060e1a;
+  color: var(--color-text);
+  background-color: var(--color-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -15,14 +74,83 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
 }
 
 a {
-  color: #4fc3f7;
+  color: var(--color-accent);
   text-decoration: none;
 }
 
 a:hover {
   text-decoration: underline;
+}
+
+/* ══════════════════════════════════════════════
+   Grain texture — applied to large dark surfaces so they don't read
+   as flat CSS fills. Inline SVG turbulence, no image request.
+   ══════════════════════════════════════════════ */
+.grain-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ══════════════════════════════════════════════
+   Scroll-triggered reveal (see components/Reveal.jsx)
+   ══════════════════════════════════════════════ */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Belt-and-suspenders: even if JS sets .reveal-visible late, reduced
+   motion never leaves content sitting at opacity:0. */
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   Scroll progress bar (see components/ScrollProgress.jsx)
+   ══════════════════════════════════════════════ */
+.scroll-progress-track {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 50;
+  background: transparent;
+}
+
+.scroll-progress-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--color-accent), var(--color-accent-bright));
+  transform: scaleX(0);
 }

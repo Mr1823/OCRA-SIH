@@ -164,7 +164,7 @@ def find_nearby_pfz(ocean_weather_data: dict) -> PFZResult:
             f"One Potential Fishing Zone found: {best.get('id', 'PFZ')} is "
             f"{best['distance_km']:.0f} km away with {best['suitability']} suitability "
             f"(score: {best['score']:.0%}). "
-            f"Likely species: {', '.join(best.get('species_likely', ['various']))}."
+            f"Likely species: {', '.join(best.get('species_likely') or ['various'])}."
         )
     else:
         best = viable[0]
@@ -172,7 +172,7 @@ def find_nearby_pfz(ocean_weather_data: dict) -> PFZResult:
             f"{len(viable)} Potential Fishing Zones found. "
             f"Best option: {best.get('id', 'PFZ')} at {best['distance_km']:.0f} km "
             f"with {best['suitability']} suitability (score: {best['score']:.0%}). "
-            f"Likely species: {', '.join(best.get('species_likely', ['various']))}."
+            f"Likely species: {', '.join(best.get('species_likely') or ['various'])}."
         )
 
     return PFZResult(

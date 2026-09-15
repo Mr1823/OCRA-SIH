@@ -1,17 +1,43 @@
 import { useState, useRef, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import './ChatPanel.css';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-const SAMPLE_QUERIES = [
-  '🛡️ Is it safe to venture into the sea near Chennai?',
-  '🐟 Where is the nearest PFZ near Mumbai?',
-  '🌀 Are there any cyclone alerts near Vizag?',
+const SAMPLE_QUERY_KEYS = ['safety', 'pfz', 'alerts'];
+
+// All 13 coastal districts of Tamil Nadu, matching
+// backend/utils/geocoding.py's get_all_tn_coastal_points() — a
+// fisherman can pick a district by name instead of needing to know
+// the exact coastal town ORCA resolves it to. Keys map into the
+// districts.*/towns.* translation namespaces so labels (and the
+// values ORCA actually receives) switch with the UI language.
+const TN_DISTRICT_KEYS = [
+  'thiruvallur', 'chennai', 'chengalpattu', 'villupuram', 'cuddalore',
+  'nagapattinam', 'thiruvarur', 'thanjavur', 'pudukkottai', 'ramanathapuram',
+  'thoothukudi', 'tirunelveli', 'kanyakumari',
 ];
 
+const TN_TOWN_KEY_BY_DISTRICT = {
+  thiruvallur: 'pazhaverkadu',
+  chennai: 'chennai',
+  chengalpattu: 'mamallapuram',
+  villupuram: 'marakkanam',
+  cuddalore: 'cuddalore',
+  nagapattinam: 'nagapattinam',
+  thiruvarur: 'vedaranyam',
+  thanjavur: 'pointCalimere',
+  pudukkottai: 'kottaipattinam',
+  ramanathapuram: 'rameshwaram',
+  thoothukudi: 'thoothukudi',
+  tirunelveli: 'idinthakarai',
+  kanyakumari: 'kanyakumari',
+};
+
 export default function ChatPanel({ onResponse }) {
+  const { t, i18n } = useTranslation();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -32,7 +58,10 @@ export default function ChatPanel({ onResponse }) {
     setLoading(true);
 
     try {
-      const res = await axios.post(`${API_URL}/query`, { query });
+      const res = await axios.post(`${API_URL}/query`, {
+        query,
+        language: i18n.resolvedLanguage || i18n.language,
+      });
       const data = res.data;
 
       const assistantMsg = {
@@ -47,7 +76,7 @@ export default function ChatPanel({ onResponse }) {
     } catch (err) {
       const errorMsg = {
         role: 'assistant',
-        text: `⚠️ **Error**: ${err.response?.data?.detail || err.message || 'Could not reach the ORCA backend. Is it running?'}`,
+        text: `${t('chat.errorPrefix')}: ${err.response?.data?.detail || err.message || t('chat.errorFallback')}`,
       };
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
@@ -66,31 +95,38 @@ export default function ChatPanel({ onResponse }) {
     sendQuery(clean);
   };
 
+  const handleDistrictSelect = (e) => {
+    const town = e.target.value;
+    if (!town) return;
+    const query =
+      (i18n.resolvedLanguage || i18n.language) === 'ta'
+        ? `இன்று ${town} அருகில் கடலுக்குச் செல்வது பாதுகாப்பானதா?`
+        : `Is it safe to venture into the sea near ${town} today?`;
+    sendQuery(query);
+    e.target.value = ''; // reset so the same district can be re-selected later
+  };
+
   return (
     <div className="chat-panel">
       <div className="chat-header">
-        <h2>🐋 ORCA</h2>
-        <span className="chat-subtitle">Marine Intelligence Assistant</span>
+        <h2>🐋 {t('chat.title')}</h2>
+        <span className="chat-subtitle">{t('chat.subtitle')}</span>
       </div>
 
       <div className="chat-messages">
         {messages.length === 0 && (
           <div className="chat-welcome">
-            <p className="welcome-title">Welcome to ORCA!</p>
-            <p className="welcome-desc">
-              Ask me about sea safety, fishing zones, or weather alerts along
-              the Indian coast.
-            </p>
+            <p className="welcome-title">{t('chat.welcomeTitle')}</p>
+            <p className="welcome-desc">{t('chat.welcomeDesc')}</p>
             <div className="sample-queries">
-              {SAMPLE_QUERIES.map((q, i) => (
-                <button
-                  key={i}
-                  className="sample-btn"
-                  onClick={() => handleSampleClick(q)}
-                >
-                  {q}
-                </button>
-              ))}
+              {SAMPLE_QUERY_KEYS.map((key) => {
+                const q = t(`chat.sampleQueries.${key}`);
+                return (
+                  <button key={key} className="sample-btn" onClick={() => handleSampleClick(q)}>
+                    {q}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -116,19 +152,41 @@ export default function ChatPanel({ onResponse }) {
         <div ref={messagesEndRef} />
       </div>
 
+      <div className="tn-district-picker">
+        <select
+          className="tn-district-select"
+          defaultValue=""
+          onChange={handleDistrictSelect}
+          disabled={loading}
+          aria-label="Quick-select a Tamil Nadu coastal district"
+        >
+          <option value="" disabled>
+            {t('chat.districtPickerPlaceholder')}
+          </option>
+          {TN_DISTRICT_KEYS.map((districtKey) => {
+            const town = t(`towns.${TN_TOWN_KEY_BY_DISTRICT[districtKey]}`);
+            const district = t(`districts.${districtKey}`);
+            return (
+              <option key={districtKey} value={town}>
+                {district} — {town}
+              </option>
+            );
+          })}
+        </select>
+      </div>
+
       <form className="chat-input-bar" onSubmit={handleSubmit}>
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask about sea conditions, fishing zones, or alerts…"
+          placeholder={t('chat.inputPlaceholder')}
           disabled={loading}
         />
         <button type="submit" disabled={loading || !input.trim()}>
-          Send
+          {t('chat.send')}
         </button>
       </form>
     </div>
   );
 }
-

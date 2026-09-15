@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -14,8 +15,11 @@ L.Icon.Default.mergeOptions({
 
 // Color-coded circle marker icons
 function createIcon(color) {
+  // "blue" is the plain location pin — tied to the brand accent.
+  // green/red/orange/cyan are the safety-verdict signal colors and are
+  // deliberately left unchanged.
   const colorMap = {
-    blue: '#2196f3',
+    blue: '#0ea5e9',
     green: '#4caf50',
     red: '#f44336',
     orange: '#ff9800',
@@ -65,6 +69,7 @@ const DEFAULT_CENTER = [15.0, 78.0];
 const DEFAULT_ZOOM = 5;
 
 export default function MapView({ mapData }) {
+  const { t } = useTranslation();
   const center = mapData?.center || DEFAULT_CENTER;
   const zoom = mapData?.zoom || DEFAULT_ZOOM;
   const markers = mapData?.markers || [];
@@ -72,11 +77,9 @@ export default function MapView({ mapData }) {
   return (
     <div className="map-view">
       <div className="map-header">
-        <h3>🗺️ Map View</h3>
+        <h3>{t('map.title')}</h3>
         {markers.length > 0 && (
-          <span className="marker-count">
-            {markers.length} marker{markers.length !== 1 ? 's' : ''}
-          </span>
+          <span className="marker-count">{t('map.markerCount', { count: markers.length })}</span>
         )}
       </div>
 
@@ -87,8 +90,8 @@ export default function MapView({ mapData }) {
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; OpenStreetMap contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
         <MapUpdater center={center} zoom={zoom} />
@@ -112,24 +115,24 @@ export default function MapView({ mapData }) {
       {/* Legend */}
       <div className="map-legend">
         <div className="legend-item">
-          <span className="legend-dot" style={{ background: '#2196f3' }}></span>
-          Location
+          <span className="legend-dot" style={{ background: '#0ea5e9' }}></span>
+          {t('map.legend.location')}
         </div>
         <div className="legend-item">
           <span className="legend-dot" style={{ background: '#4caf50' }}></span>
-          Safe / PFZ
+          {t('map.legend.safePfz')}
         </div>
         <div className="legend-item">
           <span className="legend-dot" style={{ background: '#ff9800' }}></span>
-          Caution
+          {t('map.legend.caution')}
         </div>
         <div className="legend-item">
           <span className="legend-dot" style={{ background: '#f44336' }}></span>
-          Unsafe / Alert
+          {t('map.legend.unsafeAlert')}
         </div>
         <div className="legend-item">
           <span className="legend-dot" style={{ background: '#00bcd4' }}></span>
-          PFZ (Good)
+          {t('map.legend.pfzGood')}
         </div>
       </div>
     </div>

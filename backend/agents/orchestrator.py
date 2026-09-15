@@ -2,17 +2,18 @@
 Orchestrator Agent — parses a user's natural-language query, selects the
 right handler(s), runs them, and returns a synthesised response.
 
-Uses Google Gemini (gemini-2.0-flash) with native function calling to
-determine intent, extract location/date, and pick from three tools:
+Tries LLM providers in priority order to determine intent, extract
+location/date, and pick from three tools:
   1. assess_sea_safety   → ocean_weather + risk_assessment
   2. find_nearest_pfz    → ocean_weather + pfz
   3. check_alerts        → ocean_weather (alerts subset)
 
-Falls back to keyword-based intent detection if the Gemini API key is
-missing or the call fails, so the demo is always functional.
+Provider chain: Groq (fast, generous free tier) → Claude (Anthropic) →
+keyword-based fallback, so the demo is always functional even if every
+LLM provider is unavailable or unconfigured.
 
-Includes exponential-backoff retry on 429 (rate limit) responses for
-the Gemini free tier (~15 req/min).
+Includes exponential-backoff retry on 429 (rate limit) and 5xx (server
+error) responses for each provider.
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ from utils.geocoding import geocode
 logger = logging.getLogger("orca.orchestrator")
 
 # ──────────────────────────────────────────────
-#  Gemini tool definitions
+#  Claude tool definitions
 # ──────────────────────────────────────────────
 
 _TOOL_DEFINITIONS = [
@@ -46,7 +47,7 @@ _TOOL_DEFINITIONS = [
             "cyclone/weather alerts. Use this when the user asks about safety, "
             "whether it's safe to go fishing, go to sea, or venture out."
         ),
-        "parameters": {
+        "input_schema": {
             "type": "object",
             "properties": {
                 "location": {
@@ -69,7 +70,7 @@ _TOOL_DEFINITIONS = [
             "to identify productive fishing areas. Use this when the user asks "
             "about fishing zones, where to fish, PFZ, or fish catch areas."
         ),
-        "parameters": {
+        "input_schema": {
             "type": "object",
             "properties": {
                 "location": {
@@ -87,7 +88,7 @@ _TOOL_DEFINITIONS = [
             "location. Use this when the user asks about weather alerts, "
             "cyclones, storms, lightning warnings, or marine advisories."
         ),
-        "parameters": {
+        "input_schema": {
             "type": "object",
             "properties": {
                 "location": {
@@ -113,91 +114,226 @@ _SYSTEM_PROMPT = (
     "Always call exactly one tool."
 )
 
+# Tamil version — used when the UI's active language is "ta". This is
+# an instruction prompt for the LLM's tool-selection step, not
+# safety-verdict wording, so it's lower-stakes than the strings flagged
+# for human review in synthesis.py — but still AI-translated and worth
+# a native-speaker glance before relying on it in a real demo.
+_SYSTEM_PROMPT_TA = (
+    "நீங்கள் ORCA, ஒரு கடல் நுண்ணறிவு உதவியாளர். இந்திய கடற்கரையோர மீனவர்களுக்கும் "
+    "மக்களுக்கும் கடல் பாதுகாப்பு மதிப்பீடுகள், மீன்பிடி மண்டல இருப்பிடங்கள், "
+    "வானிலை/புயல் எச்சரிக்கைகள் ஆகியவற்றில் உதவுகிறீர்கள்.\n\n"
+    "பயனரின் கேள்வியின் அடிப்படையில், மிகவும் பொருத்தமான கருவியை அழையுங்கள்:\n"
+    "- assess_sea_safety: பாதுகாப்பு, கடலுக்குச் செல்லலாமா என்பது பற்றிய கேள்விகளுக்கு\n"
+    "- find_nearest_pfz: மீன்பிடி மண்டலங்கள், எங்கே மீன்பிடிக்கலாம் என்பது பற்றிய கேள்விகளுக்கு\n"
+    "- check_alerts: புயல், புயல்காற்று, மின்னல், எச்சரிக்கைகள் பற்றிய கேள்விகளுக்கு\n\n"
+    "கேள்வியிலிருந்து இருப்பிடத்தைப் பிரித்தெடுக்கவும் (தமிழ் அல்லது ஆங்கிலப் "
+    "பெயராக இருந்தாலும் அப்படியே எடுத்துக்கொள்ளுங்கள்). இருப்பிடம் "
+    "குறிப்பிடப்படவில்லை என்றால், பயனரிடம் ஒரு இருப்பிடத்தைக் குறிப்பிடச் "
+    "சொல்லுங்கள். தேதி குறிப்பிடப்படவில்லை என்றால், 'இன்று' எனக் கருதவும்.\n"
+    "எப்போதும் சரியாக ஒரு கருவியை மட்டும் அழையுங்கள்."
+)
+
 
 # ──────────────────────────────────────────────
-#  Gemini API call with retry
+#  Groq API call with retry (primary provider)
 # ──────────────────────────────────────────────
 
 
-async def _call_gemini_with_retry(query: str) -> Optional[dict]:
+async def _call_groq_with_retry(query: str, language: str = "en") -> Optional[dict]:
     """
-    Send the query to Gemini with tool definitions and return the
-    function call result as {"name": ..., "args": {...}}.
+    Send the query to Groq (OpenAI-compatible tool calling) and return
+    the tool-call result as {"name": ..., "args": {...}}.
 
-    Returns None if the API key is missing or all retries fail.
+    Returns None if the API key is missing, groq isn't installed, Groq
+    responds without a tool call, or all retries fail — the caller then
+    tries the next provider in the chain.
     """
-    if not config.GEMINI_API_KEY or config.GEMINI_API_KEY == "your_gemini_api_key_here":
-        logger.warning("No Gemini API key configured — falling back to keyword detection")
+    system_prompt = _SYSTEM_PROMPT_TA if language == "ta" else _SYSTEM_PROMPT
+    if not config.GROQ_API_KEY or config.GROQ_API_KEY == "your_groq_api_key_here":
+        logger.warning("No Groq API key configured — trying next provider")
         return None
 
     try:
-        import google.generativeai as genai
+        import groq
     except ImportError:
-        logger.warning("google-generativeai not installed — falling back to keyword detection")
+        logger.warning("groq package not installed — trying next provider")
         return None
 
-    genai.configure(api_key=config.GEMINI_API_KEY)
+    client = groq.Groq(api_key=config.GROQ_API_KEY, max_retries=0)
 
-    # Build tool spec
-    tools = [genai.protos.Tool(function_declarations=[
-        genai.protos.FunctionDeclaration(
-            name=t["name"],
-            description=t["description"],
-            parameters={
-                "type_": "OBJECT",
-                "properties": {
-                    k: {"type_": "STRING", "description": v["description"]}
-                    for k, v in t["parameters"]["properties"].items()
-                },
-                "required": t["parameters"].get("required", []),
+    # _TOOL_DEFINITIONS uses Claude's "input_schema" key (renamed from the
+    # original Gemini-era "parameters" during an earlier migration) —
+    # reformat into OpenAI/Groq's nested {"type": "function", "function": {...}}
+    # shape, with the schema back under the key Groq expects: "parameters".
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": t["name"],
+                "description": t["description"],
+                "parameters": t["input_schema"],
             },
-        )
+        }
         for t in _TOOL_DEFINITIONS
-    ])]
-
-    model = genai.GenerativeModel(
-        model_name=config.GEMINI_MODEL,
-        tools=tools,
-        system_instruction=_SYSTEM_PROMPT,
-    )
+    ]
 
     last_error = None
     for attempt in range(config.LLM_MAX_RETRIES + 1):
         try:
-            response = model.generate_content(query)
+            response = client.chat.completions.create(
+                model=config.GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query},
+                ],
+                tools=tools,
+            )
 
-            # Extract function call from response
-            for part in response.parts:
-                fn = part.function_call
-                if fn and fn.name:
-                    args = dict(fn.args) if fn.args else {}
-                    logger.info(f"Gemini selected tool: {fn.name}({args})")
-                    return {"name": fn.name, "args": args}
+            message = response.choices[0].message
+            if message.tool_calls:
+                call = message.tool_calls[0]
+                args = json.loads(call.function.arguments) if call.function.arguments else {}
+                logger.info(f"Groq selected tool: {call.function.name}({args})")
+                return {"name": call.function.name, "args": args}
 
-            # If Gemini responded with text instead of a tool call
-            if response.text:
-                logger.info(f"Gemini returned text (no tool call): {response.text[:100]}")
+            # If Groq responded with text instead of a tool call
+            if message.content:
+                logger.info(f"Groq returned text (no tool call): {message.content[:100]}")
             return None
 
-        except Exception as e:
+        except groq.RateLimitError as e:
             last_error = e
-            error_str = str(e).lower()
+            delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
+            logger.warning(
+                f"Groq API rate limited (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
+                f"{e}. Retrying in {delay:.1f}s..."
+            )
+            await asyncio.sleep(delay)
+            continue
 
-            # Retry on rate-limit (429) or transient server errors (5xx)
-            if "429" in error_str or "resource_exhausted" in error_str or "500" in error_str or "503" in error_str:
+        except groq.APIStatusError as e:
+            last_error = e
+
+            # Retry on transient server errors (5xx); anything else (4xx) is non-retryable.
+            if e.status_code >= 500:
                 delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
                 logger.warning(
-                    f"Gemini API error (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
+                    f"Groq API server error (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
                     f"{e}. Retrying in {delay:.1f}s..."
                 )
                 await asyncio.sleep(delay)
                 continue
             else:
-                # Non-retryable error
-                logger.error(f"Gemini API error (non-retryable): {e}")
+                logger.error(f"Groq API error (non-retryable): {e}")
                 break
 
-    logger.error(f"Gemini API failed after {config.LLM_MAX_RETRIES + 1} attempts: {last_error}")
+        except Exception as e:
+            last_error = e
+            logger.error(f"Groq API error (unexpected): {e}")
+            break
+
+    logger.error(f"Groq API failed after {config.LLM_MAX_RETRIES + 1} attempts: {last_error}")
+    return None
+
+
+# ──────────────────────────────────────────────
+#  Claude API call with retry
+# ──────────────────────────────────────────────
+
+
+async def _call_claude_with_retry(query: str, language: str = "en") -> Optional[dict]:
+    """
+    Send the query to Claude with tool definitions and return the
+    tool-use result as {"name": ..., "args": {...}}.
+
+    Returns None if the API key is missing, Claude responds without a
+    tool call, or all retries fail.
+    """
+    system_prompt = _SYSTEM_PROMPT_TA if language == "ta" else _SYSTEM_PROMPT
+
+    if not config.ANTHROPIC_API_KEY or config.ANTHROPIC_API_KEY == "your_key_here":
+        logger.warning("No Anthropic API key configured — falling back to keyword detection")
+        return None
+
+    try:
+        import anthropic
+    except ImportError:
+        logger.warning("anthropic package not installed — falling back to keyword detection")
+        return None
+
+    # We drive our own exponential-backoff loop below, so disable the
+    # SDK's built-in retries — otherwise the two layers compound into far
+    # more attempts than LLM_MAX_RETRIES implies.
+    client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY, max_retries=0)
+
+    tools = [
+        {
+            "name": t["name"],
+            "description": t["description"],
+            "input_schema": t["input_schema"],
+        }
+        for t in _TOOL_DEFINITIONS
+    ]
+
+    last_error = None
+    for attempt in range(config.LLM_MAX_RETRIES + 1):
+        try:
+            response = client.messages.create(
+                model=config.ANTHROPIC_MODEL,
+                max_tokens=1024,
+                system=system_prompt,
+                tools=tools,
+                messages=[{"role": "user", "content": query}],
+            )
+
+            # Extract tool use from response
+            tool_use_block = next(
+                (b for b in response.content if b.type == "tool_use"), None
+            )
+            if tool_use_block is not None:
+                args = dict(tool_use_block.input) if tool_use_block.input else {}
+                logger.info(f"Claude selected tool: {tool_use_block.name}({args})")
+                return {"name": tool_use_block.name, "args": args}
+
+            # If Claude responded with text instead of a tool call
+            text_block = next((b for b in response.content if b.type == "text"), None)
+            if text_block is not None:
+                logger.info(f"Claude returned text (no tool call): {text_block.text[:100]}")
+            return None
+
+        except anthropic.RateLimitError as e:
+            last_error = e
+            delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
+            logger.warning(
+                f"Claude API rate limited (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
+                f"{e}. Retrying in {delay:.1f}s..."
+            )
+            await asyncio.sleep(delay)
+            continue
+
+        except anthropic.APIStatusError as e:
+            last_error = e
+
+            # Retry on transient server errors (5xx); anything else (4xx) is non-retryable.
+            if e.status_code >= 500:
+                delay = config.LLM_RETRY_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    f"Claude API server error (attempt {attempt + 1}/{config.LLM_MAX_RETRIES + 1}): "
+                    f"{e}. Retrying in {delay:.1f}s..."
+                )
+                await asyncio.sleep(delay)
+                continue
+            else:
+                logger.error(f"Claude API error (non-retryable): {e}")
+                break
+
+        except Exception as e:
+            last_error = e
+            logger.error(f"Claude API error (unexpected): {e}")
+            break
+
+    logger.error(f"Claude API failed after {config.LLM_MAX_RETRIES + 1} attempts: {last_error}")
     return None
 
 
@@ -207,9 +343,19 @@ async def _call_gemini_with_retry(query: str) -> Optional[dict]:
 
 # Location patterns: "near X", "in X", "at X", "around X", or just a known city
 _LOCATION_PATTERN = re.compile(
-    r"(?:near|in|at|around|off|close to|from)\s+([A-Za-z\s]+?)(?:\s*[\?\.,!]|$|\s+(?:today|tomorrow|this|next))",
+    r"\b(?:near|in|at|around|off|close to|from)\s+([A-Za-z\s]+?)(?:\s*[\?\.,!]|$|\s+(?:today|tomorrow|this|next))",
     re.IGNORECASE,
 )
+
+# Tamil has no direct equivalent of English prepositions — "near X" is
+# expressed as "X அருகில்"/"X அருகே" (postpositions after the place
+# name). This catches that specific, common phrasing — including what
+# the frontend's Tamil UI itself generates for the district dropdown —
+# but doesn't attempt full Tamil morphological analysis, so a place
+# name with a fused case suffix instead of a separate postposition
+# (e.g. "நாகப்பட்டினத்தில்" = Nagapattinam + locative "-இல்", glued on
+# with sandhi) won't be caught by this or the substring check below.
+_LOCATION_PATTERN_TA = re.compile(r"([஀-௿]+?)\s*(?:அருகில்|அருகே)")
 
 _KNOWN_CITIES = {
     "chennai", "visakhapatnam", "vizag", "mumbai", "kochi", "goa", "mangalore",
@@ -219,19 +365,42 @@ _KNOWN_CITIES = {
     "bombay", "madras", "calcutta", "pondicherry", "paradeep",
 }
 
+# Tamil names for the 13 TN coastal districts + towns (see
+# utils/geocoding.py's _TN_COASTAL_DISTRICTS — verified there, not
+# guessed) plus a few other major coastal cities, for the substring
+# fallback when there's no "அருகில்"/"அருகே" postposition to anchor on.
+_KNOWN_CITIES_TA = {
+    "சென்னை", "விசாகப்பட்டினம்", "மும்பை", "கொச்சி",
+    "திருவள்ளூர்", "பழவேற்காடு", "செங்கல்பட்டு", "மாமல்லபுரம்",
+    "விழுப்புரம்", "மரக்காணம்", "கடலூர்", "நாகப்பட்டினம்",
+    "திருவாரூர்", "வேதாரண்யம்", "தஞ்சாவூர்", "கோடியக்கரை",
+    "புதுக்கோட்டை", "கோட்டைப்பட்டினம்", "இராமநாதபுரம்", "இராமேஸ்வரம்",
+    "தூத்துக்குடி", "திருநெல்வேலி", "இடிந்தகரை", "கன்னியாகுமரி",
+}
+
 
 def _extract_location_from_query(query: str) -> Optional[str]:
-    """Try to extract a location name from the query text."""
-    # Pattern match
+    """Try to extract a location name from the query text (English or Tamil)."""
+    # Pattern match — English prepositions
     match = _LOCATION_PATTERN.search(query)
     if match:
         return match.group(1).strip()
 
-    # Check for known city names in the query
+    # Pattern match — Tamil postpositions ("X அருகில்" / "X அருகே")
+    match_ta = _LOCATION_PATTERN_TA.search(query)
+    if match_ta:
+        return match_ta.group(1).strip()
+
+    # Check for known city names in the query (English, case-insensitive)
     query_lower = query.lower()
     for city in _KNOWN_CITIES:
         if city in query_lower:
             return city
+
+    # Check for known Tamil place names (Tamil has no case; exact script match)
+    for place in _KNOWN_CITIES_TA:
+        if place in query:
+            return place
 
     return None
 
@@ -249,7 +418,7 @@ def _extract_date_from_query(query: str) -> str:
 
 def _keyword_intent_detection(query: str) -> Optional[dict]:
     """
-    Simple keyword-based fallback for intent detection when Gemini is
+    Simple keyword-based fallback for intent detection when Claude is
     unavailable.
     """
     query_lower = query.lower()
@@ -276,6 +445,86 @@ def _keyword_intent_detection(query: str) -> Optional[dict]:
 
     # Default: treat as safety query if we have a location
     return {"name": "assess_sea_safety", "args": {"location": location, "date": date}}
+
+
+# ──────────────────────────────────────────────
+#  Greeting / small-talk detection
+# ──────────────────────────────────────────────
+
+_GREETING_PATTERN = re.compile(
+    r"^\s*(hi|hello|hey|hiya|yo|greetings|sup)\b|^\s*good\s*(morning|afternoon|evening|day)\b",
+    re.IGNORECASE,
+)
+
+_SMALL_TALK_PHRASES = (
+    "what can you do", "who are you", "what are you", "what is this",
+    "how does this work", "what do you do", "thank you", "thanks", "thx",
+    "bye", "goodbye", "help me", "help",
+)
+
+# Marine/location signals that mean a message is a real question, however
+# short or however it happens to open (e.g. "hi, is it safe near Chennai?")
+# — these must always win over the greeting/small-talk check below.
+_MARINE_KEYWORDS = {
+    "safe", "safety", "wave", "wind", "weather", "cyclone", "storm",
+    "fish", "fishing", "pfz", "alert", "temperature", "visibility",
+    "tide", "sea", "ocean", "venture", "sst", "chlorophyll", "lightning",
+    "warning", "advisory", "harbor", "harbour", "coast", "coastal",
+}
+
+
+def _is_greeting_or_small_talk(query: str) -> bool:
+    """
+    Detect greetings/small talk so they get a warm conversational reply
+    instead of the "couldn't determine intent" error-shaped fallback.
+
+    Deliberately conservative: any marine keyword or recognisable
+    location reference disqualifies it, so a real marine question is
+    never misclassified as small talk just for being short or for
+    opening with "hi".
+    """
+    cleaned = query.strip().lower()
+    if not cleaned:
+        return False
+
+    if any(kw in cleaned for kw in _MARINE_KEYWORDS):
+        return False
+    if _LOCATION_PATTERN.search(query) or any(city in cleaned for city in _KNOWN_CITIES):
+        return False
+
+    if _GREETING_PATTERN.match(cleaned):
+        return True
+
+    return any(phrase in cleaned for phrase in _SMALL_TALK_PHRASES)
+
+
+def _small_talk_response(query: str, language: str = "en") -> str:
+    """A short, warm, conversational reply — no tool pipeline, no report."""
+    cleaned = query.strip().lower()
+
+    if language == "ta":
+        if any(p in cleaned for p in ("thank", "thx")):
+            return "நன்றி! 🐋 கடல் நிலைமைகள் பற்றி வேறு ஏதேனும் கேள்விகள் இருந்தால் கேளுங்கள்."
+        if any(p in cleaned for p in ("bye", "goodbye")):
+            return "பத்திரமாகச் செல்லுங்கள், கவனமாக இருங்கள்! 🐋👋"
+        return (
+            "வணக்கம்! நான் ORCA 🐋 — \"சென்னை அருகில் பாதுகாப்பானதா?\", "
+            "\"நாகப்பட்டினத்தில் காற்றின் வேகம் என்ன?\", அல்லது \"கடலூர் அருகில் "
+            "புயல் எச்சரிக்கை உள்ளதா?\" போன்று கேளுங்கள். நீங்கள் என்ன "
+            "தெரிந்துகொள்ள விரும்புகிறீர்கள்?"
+        )
+
+    if any(p in cleaned for p in ("thank", "thx")):
+        return "You're welcome! 🐋 Let me know if you have any other questions about sea conditions."
+
+    if any(p in cleaned for p in ("bye", "goodbye")):
+        return "Take care and stay safe out there! 🐋👋"
+
+    return (
+        "Hi! I'm ORCA 🐋 — ask me things like \"Is it safe near Chennai?\", "
+        "\"What's the wind speed at Nagapattinam?\", or \"Any cyclone alerts "
+        "near Cuddalore?\" What would you like to know?"
+    )
 
 
 # ──────────────────────────────────────────────
@@ -344,21 +593,44 @@ async def _execute_handler(tool_call: dict) -> dict:
 # ──────────────────────────────────────────────
 
 
-async def handle_query(query: str) -> dict:
+async def handle_query(query: str, language: str = "en") -> dict:
     """
     Main entry point: takes a raw user query string and returns a
     complete response with answer_text, evidence, and map_data.
 
+    Parameters
+    ----------
+    language : "en" or "ta" — UI language, used to select the LLM
+        system prompt and (in synthesise_response) the answer language.
+        Does not affect intent detection or data fetching.
+
     Flow:
-      1. Parse intent + extract location/date (Gemini or keyword fallback)
+      0. Greeting/small-talk check — short-circuit with a conversational
+         reply, skipping the tool pipeline entirely
+      1. Parse intent + extract location/date
+         (Groq → Claude → keyword fallback)
       2. Geocode location → lat/lon
       3. Run selected handler(s)
       4. Synthesise into final response
     """
-    logger.info(f"Processing query: {query[:100]}")
+    logger.info(f"Processing query: {query[:100]} (language={language})")
 
-    # Step 1: Intent detection
-    tool_call = await _call_gemini_with_retry(query)
+    # Step 0: Greetings/small talk — a plain conversational reply, not a
+    # report. No risk_assessment/pfz/evidence, no LLM call.
+    if _is_greeting_or_small_talk(query):
+        logger.info("Detected greeting/small talk — responding conversationally")
+        return {
+            "answer_text": _small_talk_response(query, language),
+            "evidence": {},
+            "map_data": None,
+        }
+
+    # Step 1: Intent detection — try providers in priority order, only
+    # falling through to the next one if the previous returned None.
+    tool_call = await _call_groq_with_retry(query, language)
+
+    if tool_call is None:
+        tool_call = await _call_claude_with_retry(query, language)
 
     if tool_call is None:
         # Fallback to keyword-based detection
@@ -366,15 +638,32 @@ async def handle_query(query: str) -> dict:
         tool_call = _keyword_intent_detection(query)
 
     if tool_call is None:
-        return {
-            "answer_text": (
+        if language == "ta":
+            # AI-translated UI copy, not a safety verdict — see the
+            # PENDING HUMAN REVIEW block in synthesis.py for the strings
+            # that actually carry safety meaning.
+            answer_text = (
+                "நீங்கள் என்ன கேட்கிறீர்கள் அல்லது எந்த இருப்பிடம் என்பதை என்னால் "
+                "புரிந்துகொள்ள முடியவில்லை. நான் இவற்றில் உதவ முடியும்:\n"
+                "• **கடல் பாதுகாப்பு**: \"சென்னை அருகில் கடலுக்குச் செல்வது "
+                "பாதுகாப்பானதா?\"\n"
+                "• **மீன்பிடி மண்டலங்கள்**: \"மும்பை அருகில் அருகிலுள்ள PFZ எங்கே?\"\n"
+                "• **வானிலை எச்சரிக்கைகள்**: \"விசாகப்பட்டினம் அருகில் புயல் "
+                "எச்சரிக்கை உள்ளதா?\"\n\n"
+                "தயவுசெய்து உங்கள் கேள்வியில் ஒரு கடலோர நகரத்தின் பெயரைச் "
+                "சேர்க்கவும்."
+            )
+        else:
+            answer_text = (
                 "I couldn't determine what you're asking about or which location "
                 "you mean. I can help with:\n"
                 "• **Sea safety**: \"Is it safe to venture into the sea near Chennai?\"\n"
                 "• **Fishing zones**: \"Where is the nearest PFZ near Mumbai?\"\n"
                 "• **Weather alerts**: \"Are there any cyclone alerts near Vizag?\"\n\n"
                 "Please include a coastal city name in your question."
-            ),
+            )
+        return {
+            "answer_text": answer_text,
             "evidence": {"error": "Could not parse query intent or location"},
             "map_data": None,
         }
@@ -383,15 +672,22 @@ async def handle_query(query: str) -> dict:
     handler_result = await _execute_handler(tool_call)
 
     if not handler_result.get("success"):
-        return {
-            "answer_text": (
+        if language == "ta":
+            answer_text = (
+                f"உங்கள் கேள்வியை நான் புரிந்துகொண்டேன், ஆனால் இருப்பிடத்தைக் "
+                f"கண்டறிய முடியவில்லை. {handler_result.get('error', 'தெரியாத பிழை')}."
+            )
+        else:
+            answer_text = (
                 f"I understood your question but couldn't resolve the location. "
                 f"{handler_result.get('error', 'Unknown error')}."
-            ),
+            )
+        return {
+            "answer_text": answer_text,
             "evidence": {"error": handler_result.get("error"), "intent": handler_result.get("intent")},
             "map_data": None,
         }
 
     # Step 4: Synthesise
-    response = await synthesise_response(handler_result, query)
+    response = await synthesise_response(handler_result, query, language)
     return response

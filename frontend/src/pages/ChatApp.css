@@ -1,17 +1,12 @@
 /* ── Global layout ── */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
 .app-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #060e1a;
-  color: #e0e0e0;
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
 }
 
 /* ── Header ── */
@@ -20,8 +15,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 10px 24px;
-  background: linear-gradient(90deg, #071428 0%, #0d2240 50%, #071428 100%);
-  border-bottom: 1px solid #1e3a5f;
+  background: linear-gradient(90deg, var(--color-bg-alt) 0%, var(--color-surface-raised) 50%, var(--color-bg-alt) 100%);
+  border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
@@ -31,20 +26,28 @@
   gap: 10px;
 }
 
+.header-brand a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
 .header-logo {
   font-size: 1.6rem;
 }
 
 .header-brand h1 {
+  font-family: var(--font-heading);
   font-size: 1.4rem;
-  font-weight: 800;
-  color: #4fc3f7;
+  font-weight: 700;
+  color: var(--color-accent-bright);
   letter-spacing: 2px;
 }
 
 .header-tagline {
   font-size: 0.72rem;
-  color: #5a7da8;
+  color: var(--color-text-dim);
   letter-spacing: 0.5px;
   display: none;
 }
@@ -57,6 +60,7 @@
 
 .header-badges {
   display: flex;
+  align-items: center;
   gap: 8px;
 }
 
@@ -70,15 +74,31 @@
 }
 
 .badge-sih {
-  background: rgba(79, 195, 247, 0.12);
-  color: #4fc3f7;
-  border: 1px solid rgba(79, 195, 247, 0.3);
+  background: var(--color-accent-dim);
+  color: var(--color-accent-bright);
+  border: 1px solid var(--color-accent-border);
 }
 
 .badge-isro {
   background: rgba(255, 152, 0, 0.12);
-  color: #ff9800;
+  color: var(--color-caution);
   border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.header-home-link {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-bright);
+  border-radius: 16px;
+  padding: 5px 14px;
+  transition: all 0.2s;
+}
+
+.header-home-link:hover {
+  color: var(--color-accent-bright);
+  border-color: var(--color-accent);
+  text-decoration: none;
 }
 
 /* ── 3-Panel Layout ── */

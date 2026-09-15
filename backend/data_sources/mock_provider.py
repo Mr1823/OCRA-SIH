@@ -22,6 +22,12 @@ from data_sources.interface import MarineConditions
 # backend/data_sources/mock_provider.py → ../../mock_data/
 _MOCK_DIR = Path(__file__).resolve().parent.parent.parent / "mock_data"
 
+# Below this distance, treat the match as "this genuinely is that
+# city's own mock profile" (e.g. querying Chennai resolves to ~0 km
+# from chennai.json's stored coordinates). Above it, the match is a
+# stand-in for a place with no dedicated profile and must say so.
+_SAME_CITY_THRESHOLD_KM = 50.0
+
 
 def _load_mock_files() -> list[dict]:
     """Load all .json files from mock_data/ into memory."""
@@ -50,6 +56,18 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 def _find_nearest(lat: float, lon: float, mock_files: list[dict]) -> dict:
     """Return the mock file whose location is closest to (lat, lon)."""
+    best, _ = _find_nearest_with_distance(lat, lon, mock_files)
+    return best
+
+
+def _find_nearest_with_distance(
+    lat: float, lon: float, mock_files: list[dict]
+) -> tuple[dict, float]:
+    """Same as _find_nearest, but also returns the distance in km — so
+    callers can tell "this really is Chennai's own profile" (~0 km)
+    apart from "there's no mock data for this place at all, so we're
+    silently reusing a city hundreds of km away" (e.g. Kanyakumari
+    borrowing Chennai's numbers from 630 km away)."""
     best = mock_files[0]
     best_dist = float("inf")
     for mf in mock_files:
@@ -58,7 +76,7 @@ def _find_nearest(lat: float, lon: float, mock_files: list[dict]) -> dict:
         if d < best_dist:
             best_dist = d
             best = mf
-    return best
+    return best, best_dist
 
 
 def _jitter(value: float, pct: float = 0.05) -> float:
@@ -71,11 +89,25 @@ def _mock_to_conditions(
     query_lat: float,
     query_lon: float,
     location_name: Optional[str],
+    match_distance_km: float = 0.0,
 ) -> MarineConditions:
     """Convert a raw mock JSON dict into a MarineConditions instance."""
     loc = raw["location"]
     ocean = raw["ocean"]
     weather = raw["weather"]
+
+    # Only 3 mock profiles exist (chennai/mumbai/visakhapatnam). Any other
+    # queried location — e.g. one of the 13 TN districts added later —
+    # silently reuses whichever of those 3 is "nearest", even if that's
+    # 600+ km away and climatically nothing like the real place. Encode
+    # that honestly in data_source rather than let it pass as if this
+    # were Kanyakumari's own data — synthesis.py surfaces this to the
+    # user; don't just fold it back into a plain "mock" without checking
+    # synthesis.py's parsing still matches.
+    if match_distance_km > _SAME_CITY_THRESHOLD_KM:
+        data_source = f"mock (borrowed from {raw.get('_filename', '?')}, {match_distance_km:.0f} km away)"
+    else:
+        data_source = "mock"
 
     return MarineConditions(
         lat=query_lat,
@@ -101,7 +133,7 @@ def _mock_to_conditions(
         active_alerts=raw.get("alerts", []),
         pfz_zones=raw.get("pfz_zones", []),
         # Provenance
-        data_source="mock",
+        data_source=data_source,
     )
 
 
@@ -122,6 +154,6 @@ async def fetch_mock_conditions(
             "Add at least one <city>.json file."
         )
 
-    nearest = _find_nearest(lat, lon, mock_files)
-    return _mock_to_conditions(nearest, lat, lon, location_name)
+    nearest, distance_km = _find_nearest_with_distance(lat, lon, mock_files)
+    return _mock_to_conditions(nearest, lat, lon, location_name, distance_km)
 

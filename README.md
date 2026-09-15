@@ -23,8 +23,8 @@ User Query (natural language)
   │
   ▼
 ┌─────────────────────────────┐
-│  Orchestrator Agent         │  ← Intent detection (Gemini / keyword fallback)
-│  (Gemini function calling)  │     + geocoding (30 coastal cities + Nominatim)
+│  Orchestrator Agent         │  ← Intent detection (Claude / keyword fallback)
+│  (Claude tool use)          │     + geocoding (30 coastal cities + Nominatim)
 └──────────┬──────────────────┘
            │ selects 1 of 3 tools
            ▼
@@ -50,7 +50,7 @@ Every recommendation carries a traceable evidence trail: which agents ran, which
 
 ## Tech Stack
 
-- **LLM Orchestration:** Google Gemini 2.0 Flash (native function calling + exponential-backoff retry)
+- **LLM Orchestration:** Anthropic Claude (native tool use + exponential-backoff retry)
 - **Backend:** Python / FastAPI
 - **Frontend:** React (Vite) + Leaflet maps + Markdown rendering
 - **Data:** Mock datasets (Chennai, Vizag, Mumbai) with live API stubs (Open-Meteo)
@@ -60,7 +60,7 @@ Every recommendation carries a traceable evidence trail: which agents ran, which
 ### Prerequisites
 - Python 3.9+
 - Node.js 18+
-- (Optional) [Gemini API key](https://aistudio.google.com/apikey) — works without it using keyword fallback
+- (Optional) [Claude API key](https://console.claude.com) — works without it using keyword fallback
 
 ### 1. Clone & configure
 
@@ -68,7 +68,7 @@ Every recommendation carries a traceable evidence trail: which agents ran, which
 git clone <repo-url>
 cd OCRA-SIH
 cp .env.example .env
-# Optional: add your Gemini API key in .env
+# Optional: add your Claude API key in .env
 ```
 
 ### 2. Backend setup
@@ -98,7 +98,7 @@ Navigate to **http://localhost:5173** and try one of the sample queries!
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/health` | Liveness probe — returns status, version, Gemini config |
+| `GET` | `/health` | Liveness probe — returns status, version, LLM config |
 | `POST` | `/query` | Accept `{"query": "..."}` → returns `{answer_text, evidence, map_data}` |
 
 ### Example
