@@ -322,12 +322,19 @@ async def get_imd_marine_data(
         "data_source": str,           # "imd_live" or "imd_baseline"
       }
     """
-    is_live = bool(config.IMD_API_KEY)
-    source_tag = "imd_live" if is_live else "imd_baseline"
-
     # Fetch cyclone track and coastal bulletins
     cyclone_payload = await fetch_cyclone_track()
     coastal_list = await fetch_coastal_bulletins()
+
+    # "imd_live" only when BOTH feeds actually answered. A configured API
+    # key isn't enough: each fetcher silently returns the fictional
+    # baseline on any failure, and that data must never be labelled live —
+    # synthesis.py drops its "not live IMD data" disclaimer for imd_live.
+    is_live = (
+        cyclone_payload is not _FALLBACK_CYCLONE_TRACK
+        and coastal_list is not _FALLBACK_COASTAL_BULLETINS
+    )
+    source_tag = "imd_live" if is_live else "imd_baseline"
 
     alerts: List[Dict[str, Any]] = []
     cyclone_info: Optional[Dict[str, Any]] = None

@@ -12,13 +12,13 @@ PENDING HUMAN REVIEW block below for the Tamil strings that carry
 actual safety meaning and have not been checked by a native speaker.
 
 CRITICAL: alert data can come from data_sources/imd_provider.py's
-"imd_baseline" fallback (a fictional example alert like "Cyclone DANA",
-used whenever no real IMD_API_KEY is configured) or the mock provider's
-fixture data — never a real live feed. _has_synthetic_alert_data() and
-the qualifier appended in synthesise_response() exist specifically so a
-fabricated cyclone is never presented with the same confidence as a
-real one. Do not remove that check without replacing it with something
-equivalent.
+"imd_baseline" fallback (fictional example alerts like "Cyclone DANA",
+used whenever IMD isn't configured or doesn't answer) or the mock
+provider's fixture data — not a real live feed. _has_synthetic_alert_data()
+and the qualifiers appended in synthesise_response() exist so that neither
+a fabricated cyclone NOR a fabricated all-clear (an empty baseline alert
+list) is presented with the same confidence as real IMD data. Do not
+remove that check without replacing it with something equivalent.
 """
 
 from __future__ import annotations
@@ -29,8 +29,15 @@ import re
 from typing import Any
 
 import config
+from data_sources.interface import is_unavailable
+from utils.dates import MAX_FORECAST_DAYS, describe_date, is_forecastable, resolve_requested_date, today_ist
 
 logger = logging.getLogger("orca.synthesis")
+
+
+def _reading(value, unit: str, unavailable_text: str = "unavailable") -> str:
+    """A reading with its unit for display — or the word for "unavailable", never "None"."""
+    return unavailable_text if is_unavailable(value) else f"{value} {unit}"
 
 
 # ──────────────────────────────────────────────
@@ -68,6 +75,10 @@ def _build_map_data(handler_result: dict) -> dict:
 
     elif intent == "find_nearest_pfz":
         pfz = handler_result.get("pfz_result", {})
+        verdict = handler_result.get("risk_assessment", {}).get("verdict")
+        if verdict in ("caution", "unsafe"):
+            markers[0]["color"] = "orange" if verdict == "caution" else "red"
+            markers[0]["popup"] = f"⚠️ {loc['name']}: safety {verdict.upper()} — check before heading out"
         for zone in pfz.get("zones", []):
             if zone.get("score", 0) >= 0.2:  # Only viable zones
                 markers.append({
@@ -108,21 +119,20 @@ def _build_map_data(handler_result: dict) -> dict:
 
 def _has_synthetic_alert_data(handler_result: dict) -> bool:
     """
-    True when the alert(s) in this response came from something other
-    than a genuinely live IMD feed — the mock provider's fixture data
-    ("mock"), or IMD's baseline/fictional fallback ("...imd_baseline...",
-    used when no real IMD_API_KEY is configured — e.g. the "Cyclone
-    DANA" example). A fabricated cyclone must never be presented to a
-    fisherman with the same confidence as a real one.
+    True unless the alert data behind this response came from a genuinely
+    live IMD feed ("imd_live" in data_source).
+
+    Decided by provenance, never by whether any alerts were found: an
+    empty list from IMD's "imd_baseline" fallback (no IMD_API_KEY, or IMD
+    unreachable) or from the mock provider means "we have no real alert
+    data", not "there are no alerts". Default-deny — a missing or
+    unrecognised source counts as synthetic too. A fabricated cyclone, or
+    a fabricated all-clear, must never reach a fisherman with the same
+    confidence as a real one.
     """
     ow = handler_result.get("ocean_weather", {})
-    alerts = ow.get("alerts", [])
-    if not alerts:
-        return False
-    data_source = ow.get("metadata", {}).get("data_source", "")
-    # startswith, not ==: mock_provider.py labels a borrowed-city match
-    # as "mock (borrowed from X, N km away)", not bare "mock".
-    return data_source.startswith("mock") or "imd_baseline" in data_source
+    data_source = ow.get("metadata", {}).get("data_source") or ""
+    return "imd_live" not in data_source
 
 
 def _build_evidence(handler_result: dict) -> dict:
@@ -137,23 +147,32 @@ def _build_evidence(handler_result: dict) -> dict:
         "data_source": metadata.get("data_source", "unknown"),
         "data_timestamp": metadata.get("data_timestamp", ""),
         "query_timestamp": metadata.get("query_timestamp", ""),
+        "requested_date": handler_result.get("date", "today"),
+        "conditions_type": metadata.get("conditions_type", "current"),
+        "conditions_date": metadata.get("conditions_date"),
         "location": handler_result.get("location", {}),
         "conditions_summary": {
             "ocean": ow.get("ocean", {}),
             "weather": ow.get("weather", {}),
             "tide": ow.get("tide", {}),
         },
+        # Whether the alert data — including an empty "no alerts" result —
+        # came from a live IMD feed. Set for every intent, since safety and
+        # PFZ answers lean on alerts too; same source of truth as the
+        # answer_text disclaimer.
+        "alert_data_is_live": not _has_synthetic_alert_data(handler_result),
     }
 
-    if intent == "assess_sea_safety":
-        risk = handler_result.get("risk_assessment", {})
+    # Safety answers and fishing-zone answers both carry a risk assessment.
+    risk = handler_result.get("risk_assessment")
+    if risk:
         evidence["risk_assessment"] = {
             "verdict": risk.get("verdict"),
             "risk_score": risk.get("risk_score"),
             "thresholds_applied": risk.get("thresholds_applied", {}),
         }
 
-    elif intent == "find_nearest_pfz":
+    if intent == "find_nearest_pfz":
         pfz = handler_result.get("pfz_result", {})
         evidence["pfz_analysis"] = pfz.get("analysis", {})
 
@@ -233,8 +252,8 @@ def _template_pfz_answer(handler_result: dict) -> str:
     analysis = pfz.get("analysis", {})
     lines.append(
         f"\n**Current conditions at {loc}:** "
-        f"SST {analysis.get('current_location_sst', '?')} °C, "
-        f"Chlorophyll {analysis.get('current_location_chlorophyll', '?')} mg/m³"
+        f"SST {_reading(analysis.get('current_location_sst', '?'), '°C')}, "
+        f"Chlorophyll {_reading(analysis.get('current_location_chlorophyll', '?'), 'mg/m³')}"
     )
     lines.append(f"*Suitable SST range: {analysis.get('sst_range_optimal', '26–29 °C')}*")
 
@@ -249,6 +268,12 @@ def _template_alerts_answer(handler_result: dict) -> str:
     count = len(alerts)
 
     if count == 0:
+        if _has_synthetic_alert_data(handler_result):
+            # No live IMD feed behind this — an empty list is not an all-clear.
+            return (
+                f"ℹ️ **No alerts found** near **{loc}** in the alert data available right now — "
+                f"but this is **not** a confirmed all-clear (see the note below)."
+            )
         return (
             f"✅ **No active alerts** near **{loc}** at this time.\n\n"
             f"No cyclone, lightning, or high-wave warnings are currently in effect. "
@@ -300,7 +325,7 @@ def _template_alerts_answer(handler_result: dict) -> str:
 #  but the Tamil wording itself still needs a native-speaker check.
 # ══════════════════════════════════════════════════════════════════
 
-_DATE_WORD_TA = {"today": "இன்று", "tomorrow": "நாளை"}
+_DATE_WORD_TA = {"today": "இன்று", "tomorrow": "நாளை", "the day after tomorrow": "நாளை மறுநாள்"}
 
 _SUITABILITY_TA = {
     "excellent": "மிகச் சிறந்தது",
@@ -420,8 +445,8 @@ def _template_pfz_answer_ta(handler_result: dict) -> str:
     analysis = pfz.get("analysis", {})
     lines.append(
         f"\n**{loc}-இல் தற்போதைய நிலைமைகள்:** "
-        f"கடல் வெப்பநிலை {analysis.get('current_location_sst', '?')} °C, "
-        f"குளோரோஃபில் {analysis.get('current_location_chlorophyll', '?')} mg/m³"
+        f"கடல் வெப்பநிலை {_reading(analysis.get('current_location_sst', '?'), '°C', 'கிடைக்கவில்லை')}, "
+        f"குளோரோஃபில் {_reading(analysis.get('current_location_chlorophyll', '?'), 'mg/m³', 'கிடைக்கவில்லை')}"
     )
     lines.append(f"*பொருத்தமான கடல் வெப்பநிலை வரம்பு: {analysis.get('sst_range_optimal', '26–29 °C')}*")
 
@@ -436,6 +461,11 @@ def _template_alerts_answer_ta(handler_result: dict) -> str:
     count = len(alerts)
 
     if count == 0:
+        if _has_synthetic_alert_data(handler_result):
+            return (
+                f"ℹ️ **{loc}** அருகில் தற்போது கிடைக்கும் எச்சரிக்கை தரவில் **எச்சரிக்கைகள் எதுவும் இல்லை** — "
+                f"ஆனால் இது **உறுதிசெய்யப்பட்ட பாதுகாப்பு அறிவிப்பு அல்ல** (கீழே உள்ள குறிப்பைப் பார்க்கவும்)."
+            )
         return (
             f"✅ **{loc}** அருகில் தற்போது செயலில் எச்சரிக்கைகள் இல்லை.\n\n"
             f"தற்போது புயல், மின்னல் அல்லது உயர் அலை எச்சரிக்கைகள் எதுவும் "
@@ -595,7 +625,9 @@ def _generate_template_answer(handler_result: dict, user_query: str = "", langua
     """
     intent = handler_result["intent"]
 
-    if intent == "assess_sea_safety" and user_query:
+    # The one-liners say "currently", so they only fit current conditions.
+    is_forecast = handler_result.get("ocean_weather", {}).get("metadata", {}).get("conditions_type") == "forecast"
+    if intent == "assess_sea_safety" and user_query and not is_forecast:
         topic = _detect_narrow_topic(user_query)
         if topic:
             narrow = _narrow_topic_answer(handler_result, topic, language)
@@ -641,11 +673,11 @@ def _build_data_summary(handler_result: dict) -> str:
 
     data_summary = (
         f"Location: {loc}\n"
-        f"SST: {ocean.get('sst_celsius', '?')} °C\n"
-        f"Chlorophyll: {ocean.get('chlorophyll_mg_m3', '?')} mg/m³\n"
-        f"Wave height: {ocean.get('wave_height_m', '?')} m\n"
-        f"Wind: {weather.get('wind_speed_kmh', '?')} km/h {weather.get('wind_direction', '')}\n"
-        f"Visibility: {weather.get('visibility_km', '?')} km\n"
+        f"SST: {_reading(ocean.get('sst_celsius', '?'), '°C')}\n"
+        f"Chlorophyll: {_reading(ocean.get('chlorophyll_mg_m3', '?'), 'mg/m³')}\n"
+        f"Wave height: {_reading(ocean.get('wave_height_m', '?'), 'm')}\n"
+        f"Wind: {_reading(weather.get('wind_speed_kmh', '?'), 'km/h')} {weather.get('wind_direction', '')}\n"
+        f"Visibility: {_reading(weather.get('visibility_km', '?'), 'km')}\n"
         f"Condition: {weather.get('condition', '?')}\n"
     )
 
@@ -658,7 +690,12 @@ def _build_data_summary(handler_result: dict) -> str:
         )
     elif intent == "find_nearest_pfz":
         pfz = handler_result.get("pfz_result", {})
-        data_summary += f"\nPFZ recommendation: {pfz.get('recommendation', '?')}\n"
+        risk = handler_result.get("risk_assessment", {})
+        data_summary += (
+            f"\nPFZ recommendation: {pfz.get('recommendation', '?')}\n"
+            f"Safety verdict for heading out: {risk.get('verdict', 'not assessed')}\n"
+            f"Safety reasons: {'; '.join(risk.get('reasons', [])) or 'none'}\n"
+        )
     elif intent == "check_alerts":
         alerts = handler_result.get("alerts_summary", {})
         alert_list = alerts.get("active_alerts", [])
@@ -813,6 +850,25 @@ _SYNTHETIC_ALERT_QUALIFIER_TA = (
     "பார்க்கவும். (PENDING HUMAN REVIEW — see synthesis.py module docstring)"
 )
 
+# Same rule for an EMPTY alert list that isn't from live IMD data: "no
+# alerts found" in baseline/mock data is not "no alerts in effect", and
+# must never read as a confirmed all-clear.
+_NO_LIVE_ALERTS_QUALIFIER_EN = (
+    "\n\n⚠️ **Note:** Live IMD alert data isn't currently connected, so \"no "
+    "active alerts\" here is **not** a confirmed all-clear — a real cyclone, "
+    "lightning or high-wave warning could be in effect. Check IMD's official "
+    "site at mausam.imd.gov.in before heading out."
+)
+
+_NO_LIVE_ALERTS_QUALIFIER_TA = (
+    "\n\n⚠️ **குறிப்பு:** நேரடி IMD எச்சரிக்கை தரவு தற்போது இணைக்கப்படவில்லை — "
+    "எனவே இங்கு \"செயலில் எச்சரிக்கைகள் இல்லை\" என்பது உறுதிசெய்யப்பட்ட பாதுகாப்பு "
+    "அறிவிப்பு அல்ல; உண்மையான புயல், மின்னல் அல்லது உயர் அலை எச்சரிக்கை "
+    "நடைமுறையில் இருக்கலாம். கடலுக்குச் செல்லும் முன் IMD-இன் அதிகாரப்பூர்வ "
+    "தளமான mausam.imd.gov.in-ஐப் பார்க்கவும். (PENDING HUMAN REVIEW — see "
+    "synthesis.py module docstring)"
+)
+
 # Only 3 mock profiles exist (chennai/mumbai/visakhapatnam — see
 # mock_provider.py). Any other queried location silently borrows
 # whichever is "nearest", even from 600+ km away, unless flagged here.
@@ -865,6 +921,187 @@ def _mock_data_qualifier(handler_result: dict, language: str = "en") -> str | No
     )
 
 
+# ──────────────────────────────────────────────
+#  Requested date vs. what the data describes
+# ──────────────────────────────────────────────
+
+
+def _requested_date_status(handler_result: dict) -> dict:
+    """
+    Compare the day the user asked about with the day the data describes.
+
+    Returns {"status", "label", "target"} where status is
+      "today"        — asked about today; nothing to reconcile
+      "forecast"     — the data is a forecast for exactly the requested day
+      "not_checked"  — anything else (demo data, a past or out-of-range
+                       date, an unparseable phrase): the answer must say
+                       it only checked current conditions
+    """
+    requested = handler_result.get("date") or "today"
+    metadata = handler_result.get("ocean_weather", {}).get("metadata", {})
+    today = today_ist()
+    target = resolve_requested_date(requested, today)
+
+    if target == today:
+        return {"status": "today", "label": "today", "target": target}
+
+    label = describe_date(target, today) if target is not None else requested
+    if (
+        target is not None
+        and metadata.get("conditions_type") == "forecast"
+        and metadata.get("conditions_date") == target.isoformat()
+    ):
+        return {"status": "forecast", "label": label, "target": target}
+    return {"status": "not_checked", "label": label, "target": target}
+
+
+def _date_notice(date_status: dict, requested: str, language: str = "en") -> str | None:
+    """Text prepended to the answer whenever it isn't simply about today."""
+    status, label, target = date_status["status"], date_status["label"], date_status["target"]
+    if status == "today":
+        return None
+
+    if language == "ta":
+        # PENDING HUMAN REVIEW — AI-generated Tamil, see the translations block above.
+        label_ta = _DATE_WORD_TA.get(label, target.isoformat() if target else requested)
+        if status == "forecast":
+            return (
+                f"📅 **{label_ta} ({target.isoformat()}) முன்னறிவிப்பு:** அந்த நாளுக்கான Open-Meteo "
+                f"முன்னறிவிப்பின் மிக மோசமான மணிநேர நிலைமைகளின் அடிப்படையில். காட்டப்படும் "
+                f"எச்சரிக்கைகள் தற்போது நடைமுறையில் உள்ளவை — முன்னறிவிப்புகளும் எச்சரிக்கைகளும் "
+                f"மாறலாம், கடலுக்குச் செல்லும் முன் மீண்டும் சரிபார்க்கவும். (PENDING HUMAN REVIEW)\n\n"
+            )
+        return (
+            f"📅 **கேட்கப்பட்ட நாளுக்கான ({label_ta}) முன்னறிவிப்பை என்னால் இப்போது சரிபார்க்க "
+            f"முடியாது — தற்போதைய நிலைமைகளை மட்டுமே சரிபார்க்க முடியும்.** குறிப்புக்காக "
+            f"இன்றைய தரவு கீழே உள்ளது. (PENDING HUMAN REVIEW)\n\n"
+        )
+
+    if status == "forecast":
+        heading = f"Forecast for {label}"
+        if label in ("tomorrow", "the day after tomorrow"):
+            heading += f" ({target.strftime('%a %d %b')})"
+        return (
+            f"📅 **{heading}:** based on the roughest hour in Open-Meteo's forecast for that day. "
+            f"Alerts shown are the ones in effect now — forecasts and warnings change, so check "
+            f"again before heading out.\n\n"
+        )
+
+    today = today_ist()
+    if target is None:
+        reason = f"I couldn't tell which day \"{requested}\" means, so I can only check current conditions"
+    elif target < today:
+        reason = f"I can't look up past conditions for {label}"
+    elif not is_forecastable(target, today):
+        reason = f"Forecasts only reach {MAX_FORECAST_DAYS} days ahead, so I can't check {label}"
+    else:
+        reason = f"I can only check current conditions right now, not forecasts for {label}"
+    return f"📅 **{reason}** — here's today's data for reference.\n\n"
+
+
+def _alert_phrase(alert: dict) -> str:
+    """'an active lightning alert (title)' / 'an active weather warning (title)'."""
+    alert_type = str(alert.get("type") or "unrecognised").strip().lower().replace("_", " ")
+    kind = alert_type if alert_type.endswith("warning") else f"{alert_type} alert"
+    return f"an active {kind} ({alert.get('title') or 'untitled'})"
+
+
+def _pfz_safety_caveat(handler_result: dict, language: str = "en") -> str | None:
+    """
+    Safety line leading every fishing-zone answer whose risk assessment
+    isn't clean — a promising zone must never be recommended without the
+    warning or rough conditions that come with it. Added after the answer
+    is generated, so an LLM-written answer can't drop it.
+    """
+    if handler_result.get("intent") != "find_nearest_pfz":
+        return None
+    risk = handler_result.get("risk_assessment") or {}
+    verdict = risk.get("verdict")  # None if safety wasn't assessed — treated as not clean
+    if verdict == "safe":
+        return None
+
+    ow = handler_result.get("ocean_weather", {})
+    issues = [_alert_phrase(a) for a in ow.get("alerts", [])]
+    thresholds = risk.get("thresholds_applied", {})
+    for key, label, unit in (
+        ("wave_height", "wave height", "m"),
+        ("wind_speed", "wind speed", "km/h"),
+        ("visibility", "visibility", "km"),
+    ):
+        info = thresholds.get(key, {})
+        if info.get("status") in ("caution", "unsafe"):
+            issues.append(f"{label} {info.get('value')} {unit} ({info['status']})")
+        elif info.get("status") == "unavailable":
+            issues.append(f"no {label} data")
+
+    viable = [z for z in handler_result.get("pfz_result", {}).get("zones", []) if z.get("score", 0) >= 0.2]
+    zone_id = viable[0].get("id", "PFZ") if viable else None
+    conditions = "; ".join(issues) if issues else "conditions that couldn't be fully checked"
+    emoji = "🚫" if verdict == "unsafe" else "⚠️"
+
+    if language == "ta":
+        # PENDING HUMAN REVIEW — AI-generated Tamil safety wording.
+        verdict_ta = {"caution": "எச்சரிக்கை", "unsafe": "பாதுகாப்பற்றது"}.get(verdict, "சரிபார்க்கப்படவில்லை")
+        if zone_id:
+            lead = f"**{zone_id}** ஒரு நம்பிக்கைக்குரிய மீன்பிடி மண்டலமாகத் தெரிந்தாலும், தற்போதைய நிலைமைகளில் பின்வருவன உள்ளன: {conditions}"
+        else:
+            lead = f"தற்போதைய நிலைமைகளில் பின்வருவன உள்ளன: {conditions}"
+        advice = (
+            "நிலைமைகள் மேம்படும் வரை கடலுக்குச் செல்ல வேண்டாம்."
+            if verdict == "unsafe"
+            else "கடலுக்குச் செல்லும் முன் பாதுகாப்பைச் சரிபார்க்கவும்."
+        )
+        return f"{emoji} **பாதுகாப்பு சோதனை: {verdict_ta}.** {lead} — {advice} (PENDING HUMAN REVIEW)\n\n"
+
+    verdict_en = {"caution": "CAUTION", "unsafe": "NOT SAFE"}.get(verdict, "NOT CHECKED")
+    if zone_id:
+        lead = f"While **{zone_id}** looks like a promising fishing zone, current conditions include {conditions}"
+    else:
+        lead = f"Current conditions include {conditions}"
+    advice = "do not head out until conditions improve." if verdict == "unsafe" else "verify safety before heading out."
+    return f"{emoji} **Safety check: {verdict_en}.** {lead} — {advice}\n\n"
+
+
+# Readings the safety check depends on — see data_sources.interface.DATA_UNAVAILABLE.
+_CORE_READINGS = (
+    ("ocean", "wave_height_m", "wave height", "அலை உயரம்"),
+    ("weather", "wind_speed_kmh", "wind speed", "காற்றின் வேகம்"),
+    ("weather", "visibility_km", "visibility", "பார்வைத் தூரம்"),
+)
+
+
+def _missing_data_qualifier(handler_result: dict, language: str = "en") -> str | None:
+    """
+    A deterministic note whenever a safety-relevant reading couldn't be
+    obtained for this location (e.g. Open-Meteo's null wave_height for
+    Kolkata), so a partial check is never presented as a complete one.
+    """
+    if handler_result.get("intent") not in ("assess_sea_safety", "find_nearest_pfz"):
+        return None
+
+    ow = handler_result.get("ocean_weather", {})
+    missing = [
+        (label_en, label_ta)
+        for section, key, label_en, label_ta in _CORE_READINGS
+        if is_unavailable(ow.get(section, {}).get(key))
+    ]
+    if not missing:
+        return None
+
+    if language == "ta":
+        labels = ", ".join(ta for _, ta in missing)
+        return (
+            f"\n\n⚠️ **குறிப்பு:** இந்த இருப்பிடத்திற்கான சில கடல் தரவு ({labels}) தற்போது "
+            f"கிடைக்கவில்லை — அந்த நிலைமைகளை இந்தப் பதிலால் சரிபார்க்க முடியவில்லை, "
+            f"எனவே இதை முழுமையற்ற மதிப்பீடாகக் கருதவும். (PENDING HUMAN REVIEW)"
+        )
+    labels = ", ".join(en for en, _ in missing)
+    return (
+        f"\n\n⚠️ **Note:** Some marine data isn't available for this location right now "
+        f"({labels}). This answer couldn't check those conditions, so treat it as incomplete."
+    )
+
+
 async def synthesise_response(handler_result: dict, user_query: str, language: str = "en") -> dict:
     """
     Combine handler outputs into the final API response.
@@ -885,10 +1122,28 @@ async def synthesise_response(handler_result: dict, user_query: str, language: s
     evidence = _build_evidence(handler_result)
     map_data = _build_map_data(handler_result)
 
+    requested_date = handler_result.get("date") or "today"
+    date_status = _requested_date_status(handler_result)
+    if date_status["status"] == "not_checked":
+        # The readings aren't for the day the user asked about — never let a
+        # template or LLM attach that day to today's verdict.
+        handler_result = {**handler_result, "date": "today"}
+
     # Generate answer text — try providers in priority order (Groq →
     # Claude), only falling through if the previous one returned None,
     # then fall back to templates.
     data_summary = _build_data_summary(handler_result)
+    if date_status["status"] == "not_checked":
+        data_summary += (
+            f"\nIMPORTANT: the user asked about {date_status['label']}, but no forecast was "
+            f"available — these are TODAY's current conditions. Do not describe them as "
+            f"conditions for {date_status['label']}.\n"
+        )
+    elif date_status["status"] == "forecast":
+        data_summary += (
+            f"\nThese readings are the forecast for {date_status['label']} (roughest hour of "
+            f"that day), not current conditions. Alerts are the ones in effect now.\n"
+        )
 
     answer_text = await _generate_groq_answer(handler_result, user_query, data_summary, language)
     if answer_text is None:
@@ -896,14 +1151,26 @@ async def synthesise_response(handler_result: dict, user_query: str, language: s
     if answer_text is None:
         answer_text = _generate_template_answer(handler_result, user_query, language)
 
+    safety_caveat = _pfz_safety_caveat(handler_result, language)
+    if safety_caveat:
+        answer_text = f"{safety_caveat}{answer_text}"
+
     # CRITICAL: never let a fabricated alert (mock fixture data, or
-    # IMD's "imd_baseline" fallback — e.g. the fictional "Cyclone DANA"
-    # example used when no real IMD_API_KEY is configured) read as a
-    # confident, real answer. Applied after every path above — LLM or
-    # template — so it can't be skipped by prompt non-compliance.
+    # IMD's "imd_baseline" fallback — e.g. the fictional "Cyclone DANA")
+    # or a fabricated all-clear (an empty list from those same sources)
+    # read as a confident, real answer. Applied after every path above —
+    # LLM or template — so it can't be skipped by prompt non-compliance.
     if _has_synthetic_alert_data(handler_result):
-        qualifier = _SYNTHETIC_ALERT_QUALIFIER_TA if language == "ta" else _SYNTHETIC_ALERT_QUALIFIER_EN
+        has_alerts = bool(handler_result.get("ocean_weather", {}).get("alerts"))
+        if language == "ta":
+            qualifier = _SYNTHETIC_ALERT_QUALIFIER_TA if has_alerts else _NO_LIVE_ALERTS_QUALIFIER_TA
+        else:
+            qualifier = _SYNTHETIC_ALERT_QUALIFIER_EN if has_alerts else _NO_LIVE_ALERTS_QUALIFIER_EN
         answer_text = f"{answer_text}{qualifier}"
+
+    missing_qualifier = _missing_data_qualifier(handler_result, language)
+    if missing_qualifier:
+        answer_text = f"{answer_text}{missing_qualifier}"
 
     # Separate from the alert-specific check above: applies to every
     # intent (safety/PFZ/alerts) whenever the underlying wave/wind/etc.
@@ -912,6 +1179,11 @@ async def synthesise_response(handler_result: dict, user_query: str, language: s
     mock_qualifier = _mock_data_qualifier(handler_result, language)
     if mock_qualifier:
         answer_text = f"{answer_text}{mock_qualifier}"
+
+    # The first thing the user reads whenever the answer isn't simply about today.
+    date_notice = _date_notice(date_status, requested_date, language)
+    if date_notice:
+        answer_text = f"{date_notice}{answer_text}"
 
     return {
         "answer_text": answer_text,

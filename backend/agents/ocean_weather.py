@@ -63,6 +63,9 @@ def format_conditions(mc: MarineConditions) -> dict:
             "data_source": mc.data_source,
             "query_timestamp": mc.timestamp,
             "data_timestamp": mc.data_timestamp,
+            "conditions_type": mc.conditions_type,
+            "conditions_date": mc.conditions_date,
+            "requested_date": mc.requested_date,
         },
     }
 

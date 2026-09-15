@@ -90,6 +90,7 @@ def _mock_to_conditions(
     query_lon: float,
     location_name: Optional[str],
     match_distance_km: float = 0.0,
+    requested_date: str = "today",
 ) -> MarineConditions:
     """Convert a raw mock JSON dict into a MarineConditions instance."""
     loc = raw["location"]
@@ -134,6 +135,12 @@ def _mock_to_conditions(
         pfz_zones=raw.get("pfz_zones", []),
         # Provenance
         data_source=data_source,
+        # Demo profiles have no forecasts and a fixed timestamp, so the day
+        # they describe is unknown — an answer must never present them as
+        # the day the user asked about.
+        conditions_type="current",
+        conditions_date=None,
+        requested_date=requested_date,
     )
 
 
@@ -155,5 +162,5 @@ async def fetch_mock_conditions(
         )
 
     nearest, distance_km = _find_nearest_with_distance(lat, lon, mock_files)
-    return _mock_to_conditions(nearest, lat, lon, location_name, distance_km)
+    return _mock_to_conditions(nearest, lat, lon, location_name, distance_km, date or "today")
 

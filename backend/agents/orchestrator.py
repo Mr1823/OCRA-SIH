@@ -5,7 +5,7 @@ right handler(s), runs them, and returns a synthesised response.
 Tries LLM providers in priority order to determine intent, extract
 location/date, and pick from three tools:
   1. assess_sea_safety   → ocean_weather + risk_assessment
-  2. find_nearest_pfz    → ocean_weather + pfz
+  2. find_nearest_pfz    → ocean_weather + pfz + risk_assessment
   3. check_alerts        → ocean_weather (alerts subset)
 
 Provider chain: Groq (fast, generous free tier) → Claude (Anthropic) →
@@ -77,6 +77,10 @@ _TOOL_DEFINITIONS = [
                     "type": "string",
                     "description": "The coastal city or location name",
                 },
+                "date": {
+                    "type": "string",
+                    "description": "The date to check, e.g. 'today', 'tomorrow', '2026-09-08'. Defaults to 'today'.",
+                },
             },
             "required": ["location"],
         },
@@ -94,6 +98,10 @@ _TOOL_DEFINITIONS = [
                 "location": {
                     "type": "string",
                     "description": "The coastal city or location name",
+                },
+                "date": {
+                    "type": "string",
+                    "description": "The date to check, e.g. 'today', 'tomorrow', '2026-09-08'. Defaults to 'today'.",
                 },
             },
             "required": ["location"],
@@ -405,14 +413,23 @@ def _extract_location_from_query(query: str) -> Optional[str]:
     return None
 
 
+_ISO_DATE_IN_QUERY = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+
+
 def _extract_date_from_query(query: str) -> str:
-    """Extract a date reference from the query. Defaults to 'today'."""
+    """
+    Extract a date phrase from the query (English or Tamil). Defaults to
+    'today'; utils.dates.resolve_requested_date() turns it into a date.
+    """
     query_lower = query.lower()
-    if "tomorrow" in query_lower:
+    # "day after tomorrow" first — it contains "tomorrow".
+    if "day after tomorrow" in query_lower or "நாளை மறுநாள்" in query:
+        return "day after tomorrow"
+    if "tomorrow" in query_lower or "நாளை" in query:
         return "tomorrow"
-    if "today" in query_lower:
-        return "today"
-    # Could add more date parsing here
+    iso_date = _ISO_DATE_IN_QUERY.search(query)
+    if iso_date:
+        return iso_date.group(1)
     return "today"
 
 
@@ -436,12 +453,12 @@ def _keyword_intent_detection(query: str) -> Optional[dict]:
     # PFZ queries
     pfz_keywords = ["fishing zone", "pfz", "fish", "catch", "where to fish", "fishing area"]
     if any(kw in query_lower for kw in pfz_keywords):
-        return {"name": "find_nearest_pfz", "args": {"location": location}}
+        return {"name": "find_nearest_pfz", "args": {"location": location, "date": date}}
 
     # Alert queries
     alert_keywords = ["alert", "cyclone", "storm", "lightning", "warning", "advisory", "hurricane"]
     if any(kw in query_lower for kw in alert_keywords):
-        return {"name": "check_alerts", "args": {"location": location}}
+        return {"name": "check_alerts", "args": {"location": location, "date": date}}
 
     # Default: treat as safety query if we have a location
     return {"name": "assess_sea_safety", "args": {"location": location, "date": date}}
@@ -540,7 +557,7 @@ async def _execute_handler(tool_call: dict) -> dict:
     name = tool_call["name"]
     args = tool_call["args"]
     location_str = args.get("location", "")
-    date = args.get("date", "today")
+    date = args.get("date") or "today"
 
     # Geocode the location
     try:
@@ -572,7 +589,10 @@ async def _execute_handler(tool_call: dict) -> dict:
     elif name == "find_nearest_pfz":
         pfz = find_nearby_pfz(ocean_weather_data)
         result["pfz_result"] = pfz.to_dict()
-        result["agents_invoked"] = ["ocean_weather", "pfz"]
+        # A fishing-zone recommendation is advice to go to sea — it gets the
+        # same safety check as a direct "is it safe?" question.
+        result["risk_assessment"] = assess_safety(ocean_weather_data).to_dict()
+        result["agents_invoked"] = ["ocean_weather", "pfz", "risk_assessment"]
 
     elif name == "check_alerts":
         # Alerts are already in ocean_weather_data
